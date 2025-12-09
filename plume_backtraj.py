@@ -3,8 +3,7 @@ import argparse
 import warnings
 from pathlib import Path
 import pickle
-
-warnings.filterwarnings("ignore", category=DeprecationWarning, message=r"`np\.bool` is a deprecated alias for the builtin `bool`")
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*`np\.bool` is a deprecated alias.*")
 
 import matplotlib
 matplotlib.use('Agg')
@@ -45,8 +44,8 @@ TRAJECTORY_ALPHA = 0.5
 
 '''
 nohup 
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00'
-COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5_4km/wrfout_d01_2025-11-23_06:00:00'
+COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
 
 
 #SO2
@@ -55,11 +54,11 @@ outdir="./so2_run"
 mkdir -p "$outdir"
 python plume_backtraj.py \
  --wrfout "$WRFOUT" \
- --start-time-index 29 \
+ --start-time '2025-11-24T10:00:00' \
  --column "$COLUMN" --integration-dt 15\
  --column-var 'sulfurdioxide_total_vertical_column_15km' --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
  --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
- --eruption-start '2025-11-23T08:30:00' --eruption-end '2025-11-24T10:00:00' \
+ --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
  --receptor-lat 13.51 --receptor-lon 40.71 \
  --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
  --arrival-bin-minutes 30 \
@@ -73,8 +72,8 @@ python plume_backtraj.py \
 
 
 #Aerosols
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00'
-COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/merged_aerosol_index_354_388_2025-NOV-24.nc'
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5_4km/wrfout_d01_2025-11-23_06:00:00'
+COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc'
 
 for aer in sulf ash10 ash9 ash8 ash7 ash6; do
     outdir="./${aer}_run"
@@ -83,11 +82,11 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
     python plume_backtraj.py \
         --wrfout "$WRFOUT" \
         --aer-type "$aer" \
-        --start-time-index 29 \
+        --start-time '2025-11-24T10:00:00' \
         --column "$COLUMN" --integration-dt 15 \
         --column-var 'aerosol_index_354_388' --column-coef 1 --threshold 0.10 --colorbar-label 'Aerosol Index' \
-        --n-columns 500 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
-        --eruption-start '2025-11-23T08:30:00' --eruption-end   '2025-11-24T10:00:00' \
+        --n-columns 50 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
+        --emission-start '2025-11-23T08:30:00' --emission-end   '2025-11-24T10:00:00' \
         --receptor-lat 13.51 --receptor-lon 40.71 \
         --receptor-radius 10000 --receptor-min-h 1000 --receptor-max-h 30000 \
         --arrival-bin-minutes 30 \
@@ -102,7 +101,7 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl"
 done
 
-#todo: insterad of 29 use datetime
+
 #todo: add so2 oxidation in reverse direction
 
  --aer-type can be 'sulf', 'ash1', … 'ash10'
@@ -398,9 +397,8 @@ def advect_parcels_backward_wrf(
     parcel_radius_m=0.0,
     receptor_min_h=0.0,
     receptor_max_h=30000.0,
-    start_time_index=None,
-    eruption_start_time=None,
-    eruption_end_time=None,
+    emission_start_time=None,
+    emission_end_time=None,
     integration_dt=15.0,
     snapshot_config=None,
     settling_profile=None,
@@ -419,7 +417,7 @@ def advect_parcels_backward_wrf(
     receptor_lat, receptor_lon: cylinder center [deg]
     receptor_radius_m: cylinder radius [m]
     receptor_min_h,receptor_max_h: vertical bounds of cylinder [m]
-    eruption_start_time, eruption_end_time: np.datetime64 or None
+    emission_start_time, emission_end_time: np.datetime64 or None
     integration_dt: backward-advection sub-step [s]
     snapshot_config: optional dict containing plotting settings
     settling_profile: dict with 'heights_m' and 'velocity_ms' or None
@@ -441,17 +439,17 @@ def advect_parcels_backward_wrf(
         raise ValueError("integration_dt must be positive.")
 
     times = np.asarray(times)
-    eruption_end_sec = None
+    emission_end_sec = None
     if times.dtype.kind == "M":
-        if eruption_start_time is not None:
-            t_ref = eruption_start_time
+        if emission_start_time is not None:
+            t_ref = emission_start_time
         else:
             t_ref = times[0]
         t_sec = (times - t_ref) / np.timedelta64(1, "s")
         t_sec = t_sec.astype(float)
-        if eruption_end_time is not None:
-            eruption_end_sec = (
-                (eruption_end_time - t_ref) / np.timedelta64(1, "s")
+        if emission_end_time is not None:
+            emission_end_sec = (
+                (emission_end_time - t_ref) / np.timedelta64(1, "s")
             ).astype(float)
     else:
         t_sec = np.asarray(times, dtype=float)
@@ -466,11 +464,7 @@ def advect_parcels_backward_wrf(
         return sec_val
 
     # Determine starting time index for advection
-    if start_time_index is None:
-        it_start = nt - 1
-    else:
-        it_start = max(0, min(nt - 1, int(start_time_index)))
-
+    it_start = nt - 1
     it_finish = it_start
     dt_values = []
     finish_time_sec = t_sec[it_start]
@@ -784,9 +778,9 @@ def advect_parcels_backward_wrf(
                 hit_idxs_all = idxs_after[hit]
                 z_hit = z_p[hit]
                 valid_hit = np.ones(hit_idxs_all.size, dtype=bool)
-                if eruption_end_sec is not None:
-                    valid_hit &= new_time <= eruption_end_sec + 1e-6
-                if eruption_start_time is not None:
+                if emission_end_sec is not None:
+                    valid_hit &= new_time <= emission_end_sec + 1e-6
+                if emission_start_time is not None:
                     valid_hit &= new_time >= -1e-6
                 if np.any(valid_hit):
                     hit_idxs = hit_idxs_all[valid_hit]
@@ -799,7 +793,7 @@ def advect_parcels_backward_wrf(
             sub_time = new_time
             current_time_sec = sub_time
 
-            if eruption_start_time is not None and sub_time <= 0.0:
+            if emission_start_time is not None and sub_time <= 0.0:
                 reached_start = True
                 break
 
@@ -2080,16 +2074,20 @@ def parse_args():
         help="Maximum height of receptor cylinder [m].",
     )
     parser.add_argument(
-        "--start-time-index",
-        type=int,
-        default=-1,
-        help="Time index to start from (default -1 for last available time).",
-    )
-    parser.add_argument(
         "--integration-dt",
         type=float,
         default=15.0,
         help="Backward-advection sub-step in seconds (e.g., 15).",
+    )
+    parser.add_argument(
+        "--start-time",
+        type=str,
+        default=None,
+        help=(
+            "UTC start time for back-trajectories, "
+            "e.g. 2021-04-10T15:00:00 or 2021-04-10_15:00:00. "
+            "If not provided, the last time step from the WRF file is used."
+        ),
     )
     parser.add_argument(
         "--aer-type",
@@ -2178,22 +2176,22 @@ def parse_args():
         help="Optional path to store a pickle with all inputs/results for re-plotting.",
     )
     parser.add_argument(
-        "--eruption-start",
+        "--emission-start",
         type=str,
         default=None,
         help=(
-            "UTC start time of emission/eruption, "
+            "UTC start time of emission, "
             "e.g. 2021-04-10T15:00:00 or 2021-04-10_15:00:00. "
             "Advection stops at this time, and emission times are "
             "reported relative to it."
         ),
     )
     parser.add_argument(
-        "--eruption-end",
+        "--emission-end",
         type=str,
         default=None,
         help=(
-            "UTC end time of emission/eruption (same format as --eruption-start). "
+            "UTC end time of emission (same format as --emission-start). "
             "Used to define fixed time bins and ignore arrivals after emission ceased."
         ),
     )
@@ -2246,36 +2244,36 @@ def main(args):
     times_arr = np.asarray(times)
 
     # Parse eruption start time (optional)
-    eruption_start_time = None
-    if args.eruption_start is not None:
-        s = args.eruption_start.strip()
+    emission_start_time = None
+    if args.emission_start is not None:
+        s = args.emission_start.strip()
         if "T" not in s and "_" in s:
             s_iso = s.replace("_", "T")
         else:
             s_iso = s
-        eruption_start_time = np.datetime64(s_iso)
+        emission_start_time = np.datetime64(s_iso)
 
-        if eruption_start_time < times_arr[0] or eruption_start_time > times_arr[-1]:
+        if emission_start_time < times_arr[0] or emission_start_time > times_arr[-1]:
             raise ValueError(
-                f"Eruption start time {eruption_start_time} outside WRF time range "
+                f"Eruption start time {emission_start_time} outside WRF time range "
                 f"[{times_arr[0]}, {times_arr[-1]}]."
             )
 
-    eruption_end_time = None
-    if args.eruption_end is not None:
-        if eruption_start_time is None:
-            raise ValueError("--eruption-end requires --eruption-start to be set.")
-        s = args.eruption_end.strip()
+    emission_end_time = None
+    if args.emission_end is not None:
+        if emission_start_time is None:
+            raise ValueError("--emission-end requires --emission-start to be set.")
+        s = args.emission_end.strip()
         if "T" not in s and "_" in s:
             s_iso = s.replace("_", "T")
         else:
             s_iso = s
-        eruption_end_time = np.datetime64(s_iso)
-        if eruption_end_time <= eruption_start_time:
-            raise ValueError("eruption-end must be later than eruption-start.")
-        if eruption_end_time < times_arr[0] or eruption_end_time > times_arr[-1]:
+        emission_end_time = np.datetime64(s_iso)
+        if emission_end_time <= emission_start_time:
+            raise ValueError("emission-end must be later than emission-start.")
+        if emission_end_time < times_arr[0] or emission_end_time > times_arr[-1]:
             raise ValueError(
-                f"Eruption end time {eruption_end_time} outside WRF time range "
+                f"Eruption end time {emission_end_time} outside WRF time range "
                 f"[{times_arr[0]}, {times_arr[-1]}]."
             )
 
@@ -2284,11 +2282,21 @@ def main(args):
     j_rec, i_rec = np.unravel_index(np.argmin(dist2_rec), dist2_rec.shape)
 
     nt = u.shape[0]
-    if args.start_time_index < 0:
-        it_start = nt + args.start_time_index
+    if args.start_time:
+        s = args.start_time.strip()
+        if "T" not in s and "_" in s:
+            s_iso = s.replace("_", "T")
+        else:
+            s_iso = s
+        start_time_dt = np.datetime64(s_iso)
+        time_diffs = np.abs(times_arr - start_time_dt)
+        it_start = np.argmin(time_diffs)
+        if time_diffs[it_start] > np.timedelta64(1, 'm'):
+             warnings.warn(f"Provided start time {start_time_dt} is more than 1 minute away from the closest WRF time {times_arr[it_start]}. Using the closest time.")
+        _diag(f"Using start time {times_arr[it_start]} at index {it_start} (closest to requested {start_time_dt}).")
     else:
-        it_start = args.start_time_index
-    it_start = max(0, min(nt - 1, it_start))
+        it_start = nt - 1
+        _diag(f"No start time provided. Using last available time: {times_arr[it_start]} at index {it_start}.")
 
     with Dataset(column_file, "r") as ds_col:
         col_var = ds_col.variables[column_varname]
@@ -2411,9 +2419,8 @@ def main(args):
         parcel_radius_m=args.parcel_radius,
         receptor_min_h=receptor_min_h,
         receptor_max_h=receptor_max_h,
-        start_time_index=it_start,
-        eruption_start_time=eruption_start_time,
-        eruption_end_time=eruption_end_time,
+        emission_start_time=emission_start_time,
+        emission_end_time=emission_end_time,
         integration_dt=integration_dt,
         snapshot_config=snapshot_config,
         settling_profile=settling_profile,
@@ -2499,8 +2506,8 @@ def main(args):
         arrival_mass = np.ones_like(arrival_time_sec, dtype=float)
 
     if times_arr.dtype.kind == "M":
-        if eruption_start_time is not None:
-            t0 = eruption_start_time
+        if emission_start_time is not None:
+            t0 = emission_start_time
         else:
             t0 = times_arr[0]
         start_time_sec = (
@@ -2558,12 +2565,12 @@ def main(args):
     time_axis_mode = "numeric"
 
     if (
-        eruption_start_time is not None
-        and eruption_end_time is not None
+        emission_start_time is not None
+        and emission_end_time is not None
         and times_arr.dtype.kind == "M"
     ):
         duration_sec = (
-            (eruption_end_time - eruption_start_time) / np.timedelta64(1, "s")
+            (emission_end_time - emission_start_time) / np.timedelta64(1, "s")
         ).astype(float)
         if duration_sec <= 0:
             raise ValueError("Eruption duration must be positive.")
@@ -2592,7 +2599,7 @@ def main(args):
                 np.add.at(mass_emission, (z_bin_win, t_bin), arrival_mass_win)
         
         start_edges_sec = np.arange(n_time_bins + 1) * bin_width_sec
-        time_edges_plot = eruption_start_time + start_edges_sec.astype("timedelta64[s]")
+        time_edges_plot = emission_start_time + start_edges_sec.astype("timedelta64[s]")
         time_labels = [str(t) for t in time_edges_plot[:-1]]
     else:
         if arrival_time_sec.size == 0:
@@ -2602,8 +2609,8 @@ def main(args):
             mass_emission = np.zeros_like(emission)
             if times_arr.dtype.kind == "M":
                 time_axis_mode = "datetime"
-                if eruption_start_time is not None:
-                    t_ref = eruption_start_time
+                if emission_start_time is not None:
+                    t_ref = emission_start_time
                 else:
                     t_ref = times_arr[0]
                 duration = max(bin_width_sec, 3600.0)
@@ -2630,8 +2637,8 @@ def main(args):
             start_edges_sec = (t_bin_min + np.arange(n_time_bins + 1)) * bin_width_sec
             if times_arr.dtype.kind == "M":
                 time_axis_mode = "datetime"
-                if eruption_start_time is not None:
-                    t_ref = eruption_start_time
+                if emission_start_time is not None:
+                    t_ref = emission_start_time
                 else:
                     t_ref = times_arr[0]
                 time_edges_plot = (
@@ -2799,8 +2806,8 @@ def main(args):
                 receptor=dict(lat=receptor_lat, lon=receptor_lon, radius_m=receptor_radius_m),
                 receptor_min_h=receptor_min_h,
                 receptor_max_h=receptor_max_h,
-                eruption_start=eruption_start_time,
-                eruption_end=eruption_end_time,
+                emission_start=emission_start_time,
+                emission_end=emission_end_time,
             ),
         )
         with open(args.state_pickle, "wb") as fh:

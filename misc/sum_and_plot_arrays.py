@@ -6,12 +6,12 @@ from scipy import ndimage
 
 # The file paths are passed as command-line arguments
 file_paths = [
-    "ash5_run/emission_time_height.txt",
-    "ash6_run/emission_time_height.txt",
-    "ash7_run/emission_time_height.txt",
-    "ash8_run/emission_time_height.txt",
-    "ash9_run/emission_time_height.txt",
-    "ash10_run/emission_time_height.txt",
+    "../4km/ash5_run/mass_emission_time_height.txt",
+    "../4km/ash6_run/mass_emission_time_height.txt",
+    "../4km/ash7_run/mass_emission_time_height.txt",
+    "../4km/ash8_run/mass_emission_time_height.txt",
+    "../4km/ash9_run/mass_emission_time_height.txt",
+    "../4km/ash10_run/mass_emission_time_height.txt",
 ]
 
 # Read and parse each file into a numpy array, skipping the header rows

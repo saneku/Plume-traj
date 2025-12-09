@@ -44,12 +44,14 @@ The script destaggers winds, computes cell-center heights and layer thickness (`
 
 ### 2.2 SO₂ column file (`--column`)
 
-A NetCDF file with the SO₂ column field regridded onto the same WRF horizontal grid:
+A NetCDF file containing the SO₂ column field.
+
+**Important:** The column data must be regridded onto the exact same horizontal grid as the `--wrfout` file. The script expects matching `(south_north, west_east)` dimensions.
 
 - Dimensions: `(time, south_north, west_east)` or `(south_north, west_east)`
 - Variable name: by default `SO2_COLUMN` (changeable via `--column-var`)
 
-If the column field has a time dimension, the script uses the time index chosen by `--start-time-index` (default: last time in the WRF file).
+If the column field has a time dimension, the script uses the time step closest to `--start-time`.
 
 ---
 
@@ -105,11 +107,6 @@ Full argument list:
 - `--z-cyl-min`, `--z-cyl-max` (defaults: `0.0`, `30000.0` m)  
   Vertical bounds of the receptor cylinder.
 
-- `--start-time-index` (default: `-1`)  
-  WRF time index at which parcels are initialized:
-  - `-1` → last available WRF time
-  - `0..nt-1` → explicit index
-
 - `--integration-dt` (default: `15.0` s)  
   Sub-step (seconds) used for backward advection between two consecutive WRF output times. Leave at the native WRF time step for best fidelity.
 
@@ -154,6 +151,12 @@ Full argument list:
   Label applied to the colorbars of all plots that display the SO₂ column field (initial parcel map, hourly snapshots, and the trajectory figure background). The emission-matrix colorbar always shows parcel counts.
 
 - `--eruption-start` (optional, string)  
+  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
+
+- `--start-time` (optional, string)
+  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
+
+- `--eruption-start` (optional, string)
   UTC start time of emission/eruption, e.g.:
   - `2021-04-10T15:00:00` or
   - `2021-04-10_15:00:00`  
@@ -199,7 +202,7 @@ Outputs an initial parcel set with:
 ### 4.3 Backward advection
 
 `advect_parcels_backward_wrf()`:
-
+- Slices the WRF data to start from the time index closest to `--start-time`.
 - Converts WRF time axis to seconds relative to:
   - `eruption_start_time` (if provided), or
   - first WRF time (`times[0]` otherwise).
