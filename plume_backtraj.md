@@ -1,0 +1,317 @@
+# SO₂ Plume Back-Trajectory Tool (`plume_backtraj.py`)
+
+This script samples a satellite-retrieved SO₂ column on a WRF grid, launches Lagrangian parcels, advects them backward in time using 3‑D WRF winds (with linear interpolation between consecutive WRF times), and reconstructs a time–height SO₂ emission scenario at a prescribed receptor (usually the volcano vent).
+
+Each seeded parcel carries a weight that represents a fraction of the sampled column load (`column2d * cell_area / n_vert`), so the back-trajectory analysis produces both simple parcel counts *and* mass-weighted totals. Both diagnostics can be written to TXT time–height matrices and plotted as PNG heatmaps in a format similar to `PrepEmisSources`’ `emission_scenario.py`.
+
+---
+
+## 1. Dependencies
+
+Install these Python packages in your environment:
+
+- `numpy`
+- `netCDF4`
+- `scipy`
+
+Example (conda):
+
+```bash
+conda install numpy netcdf4 scipy
+```
+
+or with `pip`:
+
+```bash
+pip install numpy netCDF4 scipy
+```
+
+---
+
+## 2. Required Inputs
+
+### 2.1 WRF output (`--wrfout`)
+
+A WRF NetCDF file with at least:
+
+- `XLAT`, `XLONG` (2‑D lat/lon)
+- `MAPFAC_MX`, `MAPFAC_MY`, `DX`, `DY` (for physical grid spacing)
+- `U`, `V`, `W` (staggered 3‑D winds)
+- `PH`, `PHB` (for geometric height)
+- `Times` (WRF time stamps)
+
+The script destaggers winds, computes cell-center heights and layer thickness (`z_center`, `dz`), and extracts the time axis.
+
+### 2.2 SO₂ column file (`--column`)
+
+A NetCDF file with the SO₂ column field regridded onto the same WRF horizontal grid:
+
+- Dimensions: `(time, south_north, west_east)` or `(south_north, west_east)`
+- Variable name: by default `SO2_COLUMN` (changeable via `--column-var`)
+
+If the column field has a time dimension, the script uses the time index chosen by `--start-time-index` (default: last time in the WRF file).
+
+---
+
+## 3. Command-line Arguments
+
+Run the script with:
+
+```bash
+python plume_backtraj.py --wrfout WRFOUT.nc --column SO2_COLUMN.nc --receptor-lat 45.0 --receptor-lon 10.0
+```
+
+Full argument list:
+
+- `--wrfout` (required)  
+  Path to WRF output file containing winds and geometry.
+
+- `--column` (required)  
+  NetCDF file containing SO₂ column on the same WRF grid.
+
+- `--column-var` (default: `SO2_COLUMN`)  
+  Variable name for the SO₂ column in `--column`.
+
+- `--column-coef` (default: `1.0`)  
+  Scalar multiplier applied to the SO₂ column (e.g., convert mol m⁻² to Dobson Units).
+
+- `--threshold` (default: `0.1`)  
+  Column loading threshold used to define the SO₂ plume mask (same units as column field).
+
+- `--n-columns` (default: `200`)  
+  Number of random plume columns (grid cells above threshold) to sample.
+
+- `--n-vert` (default: `30`)  
+  Number of parcels per column, uniformly spaced between `z-min` and `z-max`.
+
+- `--seed-bbox LON_MIN LAT_MIN LON_MAX LAT_MAX` (optional)  
+  Restrict parcel seeding to a rectangular lon/lat box. If omitted, the entire plume mask above `--threshold` is used.
+
+- `--z-min` (default: `2000.0` m)  
+  Minimum initial parcel height.
+
+- `--z-max` (default: `25000.0` m)  
+  Maximum initial parcel height.
+
+- `--receptor-lat`, `--receptor-lon` (required)  
+  Latitude and longitude of the receptor (typically the volcano vent), in degrees.
+
+- `--receptor-radius` (default: `10000.0` m)  
+  Horizontal radius of the receptor cylinder (distance in meters around the receptor center).
+
+- `--parcel-radius` (default: `0.0` m)  
+  Horizontal radius assigned to each parcel when checking for contact with the receptor cylinder (parcel is considered arrived when its circle touches the receptor circle).
+
+- `--z-cyl-min`, `--z-cyl-max` (defaults: `0.0`, `30000.0` m)  
+  Vertical bounds of the receptor cylinder.
+
+- `--start-time-index` (default: `-1`)  
+  WRF time index at which parcels are initialized:
+  - `-1` → last available WRF time
+  - `0..nt-1` → explicit index
+
+- `--integration-dt` (default: `15.0` s)  
+  Sub-step (seconds) used for backward advection between two consecutive WRF output times. Leave at the native WRF time step for best fidelity.
+
+- `--arrival-bin-minutes` (default: `60.0`)  
+  Width (minutes) of time bins used to accumulate parcel counts in the emission matrix.  
+  Set to `0` to disable binning and skip emission output.
+
+- `--output-txt` (default: `emission_time_height.txt`)  
+  Path to the output time–height emission file (first line `time ...`, second line `height ...`, followed by rows of parcel counts).
+
+- `--mass-output-txt` (optional)  
+  When provided, writes a second TXT file containing the same headers as `--output-txt` but filled with mass-weighted totals per time–height bin (scientific notation, units inherited from the input column).
+
+- `--output-figure` (default: `emission_time_height.png`)  
+  Path to a PNG visualisation of the emission matrix.
+
+- `--mass-figure` (optional)  
+  Path to a PNG heatmap that mirrors the emission matrix but displays the accumulated parcel mass using the same binning.
+
+- `--trajectory-figure` (default: `parcel_trajectories.png`)  
+  Path for the PNG figure showing parcel trajectories (only parcels that reached the receptor are drawn).
+
+- `--trajectory-age` (optional)  
+  When set, writes a Cartopy map (PNG) where parcel trajectories are coloured by their arrival age (hours). The figure mirrors the main trajectory map, includes the same coastline/border background, and uses 10 discrete intervals from the `gist_ncar_r` colormap with a horizontal legend.
+
+- `--trajectory-arrival-height-figure` (optional)  
+  Like the age map, but parcels are coloured by the altitude at which they intercepted the receptor cylinder (10 discrete bins, labelled in km).
+
+- `--missed-trajectory-figure` (optional)  
+  Stores a Cartopy map of the parcels that never intersected the receptor. Their trajectories are plotted with faint dotted lines, while only the final positions are marked using the same initial-height colouring as the main trajectory panel.
+
+- `--figure-dpi` (default: `200`)  
+  Resolution (dots per inch) applied to every generated PNG figure.
+
+- `--state-pickle` (optional)  
+  Path to a pickle file where the script will store all essential inputs and computed outputs (column field, trajectories, emission matrix, etc.). You can load this file later to regenerate figures without rerunning the back-trajectory calculations.
+
+- `--hourly-figures` (flag)  
+  When provided, saves hourly parcel-location maps during the backward advection loop (`parcel_positions_hour_XXX.png`).
+
+- `--colorbar-label` (default: `Parcel count`)  
+  Label applied to the colorbars of all plots that display the SO₂ column field (initial parcel map, hourly snapshots, and the trajectory figure background). The emission-matrix colorbar always shows parcel counts.
+
+- `--eruption-start` (optional, string)  
+  UTC start time of emission/eruption, e.g.:
+  - `2021-04-10T15:00:00` or
+  - `2021-04-10_15:00:00`  
+  Backward advection stops at this time, and all arrival times are measured relative to it.
+
+- `--eruption-end` (optional, string)  
+  UTC end time of the eruption/emission. When supplied together with `--eruption-start`, the emission matrix uses fixed time bins spanning this window and discards arrivals outside it.
+
+---
+
+## 4. What the Script Does
+
+### 4.1 Read WRF geometry and winds
+
+`read_wrf_geometry_and_winds()`:
+
+- Destaggers `U`, `V`, `W` to mass points.
+- Computes:
+  - `dx_m`, `dy_m` (physical grid spacing).
+  - `area` (cell area).
+  - `z_center` (cell center heights).
+  - `dz` (layer thickness).
+  - `times` (converted from `Times` to `numpy.datetime64`).
+
+### 4.2 Sample SO₂ column and create parcels
+
+`generate_parcels_from_column_wrf()`:
+
+- Builds a plume mask where `column2d >= threshold`.
+- Optionally intersects that mask with `--seed-bbox` to limit where parcels are initialized.
+- Randomly selects `n-columns` plume grid cells.
+- For each selected cell:
+  - Draws `n-vert` random heights uniformly between `z-min` and `z-max` (sorted from low to high).
+  - Interpolates those heights onto the WRF `k` levels (using the vertical profile at the chosen start time) to get fractional layer indices.
+  - Keeps track of the actual initial height (`z_init`) so that diagnostics can colour trajectories by their launch altitude.
+
+Outputs an initial parcel set with:
+
+- `j`, `i`: fractional row/column indices.
+- `k`: fractional vertical indices.
+- `z_init`: the original launch height (meters).
+
+### 4.3 Backward advection
+
+`advect_parcels_backward_wrf()`:
+
+- Converts WRF time axis to seconds relative to:
+  - `eruption_start_time` (if provided), or
+  - first WRF time (`times[0]` otherwise).
+- Loops backward from `start_time_index` to earlier times:
+  - Interpolates `u`, `v`, `w`, `dz` at each parcel position, *linearly in time between WRF outputs* and spatially within each snapshot.
+  - Integrates parcels backward using a 4th-order Runge-Kutta (RK4) scheme in index space:
+    - `di = -(u * dt) / dx`
+    - `dj = -(v * dt) / dy`
+    - `dk = -(w * dt) / dz`
+  - Marks parcels that leave the domain as inactive.
+  - Checks whether parcels enter the receptor cylinder:
+    - Horizontal: grid-index distance converted to meters using `dx`, `dy`, compared to `receptor_radius`.
+    - Vertical: height between `z-cyl-min` and `z-cyl-max`.
+  - When a parcel hits the cylinder:
+    - Records arrival time (seconds since `eruption_start_time` or model start).
+    - Records arrival height.
+    - Marks parcel as arrived and inactive.
+- Stops integration when:
+  - All parcels are inactive, or
+  - `eruption_start_time` is reached (`t_sec <= 0`).
+
+Returns a dictionary with:
+
+- `j`, `i`, `k`
+- `arrived` (bool)
+- `arrival_time` (seconds since reference time)
+- `arrival_z` (height [m])
+
+The main script then filters to keep only parcels with `arrived == True`.
+
+### 4.4 Build time–height emission series
+
+In `main()`:
+
+1. Converts `arrival_time` to absolute datetimes (if `times` are datetime64).
+2. Defines vertical bins:
+   - Uses `z_center[start_time, :, j_rec, i_rec]` (vertical profile over receptor grid cell).
+   - Selects levels within `[z-cyl-min, z-cyl-max]`.
+3. Maps each arriving parcel to a vertical bin based on its physical arrival height. Every parcel contributes:
+   - a **count** of `1`, and
+   - a **mass weight** inherited from its source column cell (`column value × cell area / n_vert`).
+4. Time discretisation:
+   - Uses bins of width `arrival-bin-minutes` (in seconds).
+   - Computes integer time bin indices for each arrival (or enforces fixed bins if both `--eruption-start` and `--eruption-end` are supplied).
+5. Accumulates both **counts** and **mass** into 2‑D arrays:
+   - `emission[height_bin, time_bin]` stores parcel counts.
+   - `mass_emission[height_bin, time_bin]` stores the summed parcel mass for that bin.
+6. Writes the TXT file in the format:
+   1. `time <labels...>`
+   2. `height <z-centers...>`
+   3. One row per height (from top to bottom) containing parcel counts per time.
+   If `--mass-output-txt` is set, a second file with the same headers stores `mass_emission` using scientific notation.
+7. Saves a PNG (path from `--output-figure`) that mirrors the count matrix; if `--mass-figure` is supplied, a second PNG renders the mass-weighted matrix with the same binning.
+
+Cells with no arrivals remain `0.0`. Diagnostic messages print both the total parcel count and the summed mass contained in the matrices.
+
+### 4.5 Diagnostics and figures
+
+- **Initial parcel map** (`parcel_locations_tXXX.png`): shows the column field (scaled by `--column-coef`), the threshold contour (white dash-dot), receptor location/circle, and all initial parcels. The colorbar label for this and any other column-field plot comes from `--colorbar-label`.
+- **Hourly snapshots** (`--hourly-figures`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index).
+- **Trajectory figure** (`--trajectory-figure`): plots only those parcels that reached the receptor. Their dotted paths and starting markers are coloured by launch height using 10 evenly spaced intervals between `--z-min` and `--z-max`, with a horizontal rainbow legend for the initial-height bins. Only the start points are highlighted (no terminal markers), emphasizing where each parcel originated. The rendering is heavily optimized using `matplotlib.collections.LineCollection` to draw all trajectories at once, making it efficient even for thousands of parcels.
+- **Parcel-age figure** (`--trajectory-age`, optional): second Cartopy panel where the same trajectories are coloured by their arrival age. Ten evenly spaced time bins drive a horizontal `gist_ncar_r` legend (labelled in hours), giving a quick view of how long each parcel needed to reach the receptor.
+- **Arrival-height figure** (`--trajectory-arrival-height-figure`, optional): similar map but colour-codes parcels by the height at which they hit the receptor cylinder, using 10 evenly spaced bins (km) and a horizontal legend.
+- **Emission matrix figure** (`--output-figure`): heatmap of parcel counts versus time and altitude with a transparent-zero colormap, tick labels formatted as HH:MM when actual datetimes are available, and an annotation with the total number of parcels reaching the receptor.
+- **Mass-weighted outputs** (`--mass-output-txt`, `--mass-figure`, optional): mirror the count-based TXT/PNG products but display the accumulated parcel mass in each bin, preserving the same axes, tick formatting, and labels (the figure uses the “Parcel mass” colorbar title).
+- **Pickled state** (`--state-pickle`, optional): saves a dictionary containing the SO₂ field, trajectories, emission matrix, and metadata so you can replot or post-process without repeating the (expensive) back-trajectory integration.
+
+---
+
+## 5. Re-plotting from a saved state
+
+When `--state-pickle path/to/run_state.pkl` is supplied, the script stores:
+
+- The scaled SO₂ column field and plotting metadata (threshold, colour bar label).
+- All parcel trajectories (positions, activity flags, initial heights, arrival ages/heights).
+- The emission matrix (both counts and mass) with its time/height edges.
+- The original parcel seeds so the initial-location map can be recreated.
+
+To regenerate all plots without re-running the back-trajectory solver, run:
+
+```bash
+python plot_traj.py run_state.pkl
+```
+
+The helper script restores DPI/labels from the pickle and produces the full suite of figures (`trajectories_replot.png`, `trajectory_ages_replot.png`, `trajectory_arrival_height_replot.png`, `missed_trajectories_replot.png`, `parcel_locations_replot.png`, and `emission_matrix_replot.png`).
+
+---
+
+## 6. Example Command
+
+Example usage for a volcano at 45°N, 10°E, 10 km receptor radius, 1‑hour time bins:
+
+```bash
+python plume_backtraj.py \
+  --wrfout wrfout_d01_2021-04-10_18:00:00.nc \
+  --column so2_column_on_wrf_grid.nc \
+  --column-var SO2_COLUMN \
+  --threshold 0.1 \
+  --n-columns 200 \
+  --n-vert 30 \
+  --z-min 2000 \
+  --z-max 25000 \
+  --receptor-lat 45.0 \
+  --receptor-lon 10.0 \
+  --receptor-radius 10000 \
+  --z-cyl-min 0 \
+  --z-cyl-max 30000 \
+  --arrival-bin-minutes 60 \
+  --eruption-start 2021-04-10T15:00:00 \
+  --output-txt emission_time_height.txt \
+  --mass-output-txt emission_time_height_mass.txt \
+  --mass-figure emission_time_height_mass.png
+```
+
+You can copy `plume_backtraj.py` and this `plume_backtraj.md` file to another computer, install the required Python packages, and reuse the same command-line interface there.
