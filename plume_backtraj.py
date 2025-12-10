@@ -56,6 +56,7 @@ python plume_backtraj.py \
  --wrfout "$WRFOUT" \
  --start-time '2025-11-24T10:00:00' \
  --column "$COLUMN" --integration-dt 15\
+ --so2-efolding-days 35 \
  --column-var 'sulfurdioxide_total_vertical_column_15km' --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
  --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
@@ -2195,6 +2196,12 @@ def parse_args():
             "Used to define fixed time bins and ignore arrivals after emission ceased."
         ),
     )
+    parser.add_argument(
+        "--so2-efolding-days",
+        type=float,
+        default=None,
+        help="e-folding time for SO2 mass decay in days. If set, mass is increased backwards in time.",
+    )
     return parser.parse_args()
 
 
@@ -2503,6 +2510,8 @@ def main(args):
     if parcels_mass_all is not None and parcels_mass_all.size == parcels_init["j"].size:
         arrival_mass = parcels_mass_all[arrived_indices]
     else:
+        # This case might be hit if mass was not in parcels_init, which shouldn't happen
+        # with current logic but is a safe fallback.
         arrival_mass = np.ones_like(arrival_time_sec, dtype=float)
 
     if times_arr.dtype.kind == "M":
@@ -2523,6 +2532,28 @@ def main(args):
     if args.arrival_bin_minutes <= 0:
         print("arrival_bin_minutes <= 0, skipping time–height series.")
         return
+
+    # --- SO2 mass correction for oxidation ---
+    if args.so2_efolding_days is not None and args.so2_efolding_days > 0:
+        print("[diag] Applying SO2 mass correction for oxidation...")
+        efolding_time_days = args.so2_efolding_days
+        efolding_time_sec = efolding_time_days * 86400.0
+        original_mass_sum = arrival_mass.sum()
+
+        # Calculate age and correction factor for each parcel individually
+        corrected_masses = []
+        for i in range(len(arrival_time_sec)):
+            parcel_age_sec = start_time_sec - arrival_time_sec[i]
+            # mass_emission = mass_receptor * exp(age / tau)
+            mass_correction_factor = np.exp(parcel_age_sec / efolding_time_sec)
+            corrected_mass = arrival_mass[i] * mass_correction_factor
+            corrected_masses.append(corrected_mass)
+
+        arrival_mass = np.array(corrected_masses)
+        corrected_mass_sum = arrival_mass.sum()
+
+        print(f"[diag] Applied SO2 mass correction with e-folding time of {efolding_time_days} days.")
+        print(f"[diag] Total mass changed from {original_mass_sum:.3e} to {corrected_mass_sum:.3e}.")
 
     # Vertical discretisation: use WRF vertical layers over receptor cell at start time
     z_profile_receptor = z_center[it_start, :, j_rec, i_rec]
