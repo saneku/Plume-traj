@@ -1,18 +1,24 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from scipy import ndimage
+from pathlib import Path
 
-# The file paths are passed as command-line arguments
-file_paths = [
-    "../4km/ash5_run/mass_emission_time_height.txt",
-    "../4km/ash6_run/mass_emission_time_height.txt",
-    "../4km/ash7_run/mass_emission_time_height.txt",
-    "../4km/ash8_run/mass_emission_time_height.txt",
-    "../4km/ash9_run/mass_emission_time_height.txt",
-    "../4km/ash10_run/mass_emission_time_height.txt",
-]
+#python ./sum_and_plot_arrays.py ../4km
+
+
+parser = argparse.ArgumentParser(description="Sum and plot mass emission arrays from different ash runs.")
+parser.add_argument(
+    "dir_prefix",
+    help="Directory prefix containing the ash run directories (e.g., '../4km')."
+)
+args = parser.parse_args()
+
+dir_prefix = Path(args.dir_prefix)
+ash_types = [f"ash{i}" for i in range(5, 11)]
+file_paths = [dir_prefix / f"{ash_type}_run/mass_emission_time_height.txt" for ash_type in ash_types]
 
 # Read and parse each file into a numpy array, skipping the header rows
 arrays = []
