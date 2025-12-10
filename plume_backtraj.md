@@ -104,11 +104,17 @@ Full argument list:
 - `--parcel-radius` (default: `0.0` m)  
   Horizontal radius assigned to each parcel when checking for contact with the receptor cylinder (parcel is considered arrived when its circle touches the receptor circle).
 
-- `--z-cyl-min`, `--z-cyl-max` (defaults: `0.0`, `30000.0` m)  
+- `--receptor-min-h`, `--receptor-max-h` (defaults: `0.0`, `30000.0` m)  
   Vertical bounds of the receptor cylinder.
 
 - `--integration-dt` (default: `15.0` s)  
   Sub-step (seconds) used for backward advection between two consecutive WRF output times. Leave at the native WRF time step for best fidelity.
+
+- `--start-time` (optional, string)
+  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
+
+- `--aer-type` (optional)
+  Aerosol type for gravitational settling (e.g., `sulf`, `ash1`, etc.). If provided, applies a size-dependent settling velocity to parcels during advection.
 
 - `--arrival-bin-minutes` (default: `60.0`)  
   Width (minutes) of time bins used to accumulate parcel counts in the emission matrix.  
@@ -128,6 +134,12 @@ Full argument list:
 
 - `--trajectory-figure` (default: `parcel_trajectories.png`)  
   Path for the PNG figure showing parcel trajectories (only parcels that reached the receptor are drawn).
+
+- `--seeds-figure` (optional)
+  Path to a PNG map showing the initial locations of all seeded parcels.
+
+- `--seeds-vertical-figure` (optional)
+  Path to a PNG plot showing the initial vertical distribution of all seeded parcels.
 
 - `--trajectory-age` (optional)  
   When set, writes a Cartopy map (PNG) where parcel trajectories are coloured by their arrival age (hours). The figure mirrors the main trajectory map, includes the same coastline/border background, and uses 10 discrete intervals from the `gist_ncar_r` colormap with a horizontal legend.
@@ -151,12 +163,6 @@ Full argument list:
   Label applied to the colorbars of all plots that display the SO₂ column field (initial parcel map, hourly snapshots, and the trajectory figure background). The emission-matrix colorbar always shows parcel counts.
 
 - `--eruption-start` (optional, string)  
-  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
-
-- `--start-time` (optional, string)
-  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
-
-- `--eruption-start` (optional, string)
   UTC start time of emission/eruption, e.g.:
   - `2021-04-10T15:00:00` or
   - `2021-04-10_15:00:00`  
@@ -164,6 +170,9 @@ Full argument list:
 
 - `--eruption-end` (optional, string)  
   UTC end time of the eruption/emission. When supplied together with `--eruption-start`, the emission matrix uses fixed time bins spanning this window and discards arrivals outside it.
+
+- `--so2-efolding-days` (optional, float)
+  e-folding lifetime for SO₂ mass decay, in days. If set, parcel mass is increased backward in time to account for oxidation, affecting the mass-weighted emission matrix.
 
 ---
 
@@ -245,6 +254,10 @@ In `main()`:
    - a **count** of `1`, and
    - a **mass weight** inherited from its source column cell (`column value × cell area / n_vert`).
 4. Time discretisation:
+   - If `--so2-efolding-days` is set, the mass of each parcel is increased backward in time based on its age to account for chemical decay.
+   - `mass_corrected = mass_at_receptor * exp(age_seconds / e-folding_seconds)`
+
+5. Time discretisation:
    - Uses bins of width `arrival-bin-minutes` (in seconds).
    - Computes integer time bin indices for each arrival (or enforces fixed bins if both `--eruption-start` and `--eruption-end` are supplied).
 5. Accumulates both **counts** and **mass** into 2‑D arrays:
@@ -262,7 +275,7 @@ Cells with no arrivals remain `0.0`. Diagnostic messages print both the total pa
 ### 4.5 Diagnostics and figures
 
 - **Initial parcel map** (`parcel_locations_tXXX.png`): shows the column field (scaled by `--column-coef`), the threshold contour (white dash-dot), receptor location/circle, and all initial parcels. The colorbar label for this and any other column-field plot comes from `--colorbar-label`.
-- **Hourly snapshots** (`--hourly-figures`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index).
+- **Hourly snapshots** (`--hourly-figures`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index). This is controlled by the `--hourly-figures` flag.
 - **Trajectory figure** (`--trajectory-figure`): plots only those parcels that reached the receptor. Their dotted paths and starting markers are coloured by launch height using 10 evenly spaced intervals between `--z-min` and `--z-max`, with a horizontal rainbow legend for the initial-height bins. Only the start points are highlighted (no terminal markers), emphasizing where each parcel originated. The rendering is heavily optimized using `matplotlib.collections.LineCollection` to draw all trajectories at once, making it efficient even for thousands of parcels.
 - **Parcel-age figure** (`--trajectory-age`, optional): second Cartopy panel where the same trajectories are coloured by their arrival age. Ten evenly spaced time bins drive a horizontal `gist_ncar_r` legend (labelled in hours), giving a quick view of how long each parcel needed to reach the receptor.
 - **Arrival-height figure** (`--trajectory-arrival-height-figure`, optional): similar map but colour-codes parcels by the height at which they hit the receptor cylinder, using 10 evenly spaced bins (km) and a horizontal legend.
@@ -298,20 +311,23 @@ Example usage for a volcano at 45°N, 10°E, 10 km receptor radius, 1‑hour tim
 ```bash
 python plume_backtraj.py \
   --wrfout wrfout_d01_2021-04-10_18:00:00.nc \
+  --start-time '2025-11-24T10:00:00' \
   --column so2_column_on_wrf_grid.nc \
   --column-var SO2_COLUMN \
-  --threshold 0.1 \
-  --n-columns 200 \
+  --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU' \
+  --n-columns 3000 \
   --n-vert 30 \
   --z-min 2000 \
   --z-max 25000 \
   --receptor-lat 45.0 \
   --receptor-lon 10.0 \
   --receptor-radius 10000 \
-  --z-cyl-min 0 \
-  --z-cyl-max 30000 \
+  --receptor-min-h 1000 \
+  --receptor-max-h 30000 \
   --arrival-bin-minutes 60 \
-  --eruption-start 2021-04-10T15:00:00 \
+  --emission-start 2021-04-10T15:00:00 \
+  --emission-end '2025-11-24T10:00:00' \
+  --so2-efolding-days 35 \
   --output-txt emission_time_height.txt \
   --mass-output-txt emission_time_height_mass.txt \
   --mass-figure emission_time_height_mass.png
