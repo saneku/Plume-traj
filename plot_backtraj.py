@@ -1,4 +1,4 @@
-#python plot_traj.py 4km/so2_run/run_so2.pkl
+#python plot_backtraj.py 4km/so2_run/run_so2.pkl
 
 import argparse
 import pickle
@@ -161,6 +161,21 @@ def main():
         total_parcels=state["emission"]["total_parcels"],
         figure_dpi=dpi,
     )
+    
+    # Save the emission matrix to a text file
+    emission_matrix = state["emission"]["matrix"]
+    time_labels = state["emission"]["time_labels"]
+    z_bins = state["emission"]["z_bins"]
+    nz_bins = z_bins.size
+    n_time_bins = len(time_labels)
+    
+    with open("emission_matrix_replot.txt", "w") as f:
+        f.write("time " + " ".join(time_labels) + "\n")
+        f.write("height " + " ".join(f"{z:.2f}" for z in z_bins) + "\n")
+        for iz in range(nz_bins - 1, -1, -1):
+            row_vals = " ".join(f"{int(round(emission_matrix[iz, jt]))}" for jt in range(n_time_bins))
+            f.write(row_vals + "\n")
+    print("Time–height emission series written to 'emission_matrix_replot.txt'.")
 
     # Plot the mass-weighted emission matrix if it exists
     if "mass_matrix" in state["emission"] and state["emission"]["mass_matrix"] is not None:
@@ -177,6 +192,18 @@ def main():
             colorbar_label="Parcel mass",
             figure_dpi=dpi,
         )
+        
+        # Save the mass-weighted emission matrix to a text file
+        mass_matrix = state["emission"]["mass_matrix"]
+        with open("mass_matrix_replot.txt", "w") as f:
+            f.write("time " + " ".join(time_labels) + "\n")
+            f.write("height " + " ".join(f"{z:.2f}" for z in z_bins) + "\n")
+            for iz in range(nz_bins - 1, -1, -1):
+                row_vals = " ".join(
+                    f"{mass_matrix[iz, jt]:.6e}" for jt in range(n_time_bins)
+                )
+                f.write(row_vals + "\n")
+        print("Mass-weighted emission series written to 'mass_matrix_replot.txt'.")
 
 
 
