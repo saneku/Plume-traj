@@ -1,4 +1,4 @@
-#python plot_traj.py ./run_state_1.pkl
+#python plot_traj.py 4km/so2_run/run_so2.pkl
 
 import argparse
 import pickle
@@ -10,6 +10,7 @@ from plume_backtraj import (
     plot_parcel_arrival_height_map,
     plot_missed_parcel_trajectories,
     plot_emission_matrix,
+    _format_time_str, # Import the helper function
     compute_height_edges,
 )
 
@@ -81,7 +82,11 @@ def main():
             receptor_lon=script_args["receptor_lon"],
             receptor_radius_m=script_args["receptor_radius"],
             colorbar_label=state["column"]["colorbar_label"],
-            title=f"Parcel seeds (WRF index {state['metadata']['start_time_index']})",
+            title=(
+                "Parcel seeds at "
+                f"{_format_time_str(state['metadata'].get('start_time', ''))}\n"
+                f"(WRF index {state['metadata']['start_time_index']})"
+            ),
             figure_dpi=dpi,
         )
 
@@ -156,6 +161,23 @@ def main():
         total_parcels=state["emission"]["total_parcels"],
         figure_dpi=dpi,
     )
+
+    # Plot the mass-weighted emission matrix if it exists
+    if "mass_matrix" in state["emission"] and state["emission"]["mass_matrix"] is not None:
+        print("[diag] Re-plotting mass-weighted emission matrix.")
+        plot_emission_matrix(
+            emission=state["emission"]["mass_matrix"],
+            time_edges=state["emission"]["time_edges"],
+            z_bins=state["emission"]["z_bins"],
+            z_edges=state["emission"]["z_edges"],
+            time_labels=state["emission"]["time_labels"],
+            out_path="mass_matrix_replot.png",
+            time_axis_mode=state["emission"]["time_axis_mode"],
+            total_parcels=None, # Mass plot doesn't show parcel count
+            colorbar_label="Parcel mass",
+            figure_dpi=dpi,
+        )
+
 
 
 if __name__ == "__main__":

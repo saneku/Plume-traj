@@ -964,7 +964,7 @@ def plot_parcel_locations(
             c="red",
             edgecolors="black",
             linewidths=0.4,
-            zorder=4,
+            zorder=6,
             transform=ccrs.PlateCarree(),
         )
         if receptor_radius_m is not None and receptor_radius_m > 0:
@@ -987,13 +987,21 @@ def plot_parcel_locations(
             alpha=PARCEL_MARKER_ALPHA,
         )
 
-    cbar = plt.colorbar(mesh, ax=ax, label=colorbar_label, orientation="vertical", pad=0.1, shrink=0.8)
+    # Add a horizontal colorbar at the bottom
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cbar = plt.colorbar(mesh, cax=cax, label=colorbar_label, orientation="horizontal")
+
+    # cbar = plt.colorbar(mesh, ax=ax, label=colorbar_label, orientation="vertical", pad=0.1, shrink=0.8)
     if title:
         ax.set_title(title)
+
+    text_str = f"Total parcels initialized: {parcels['j'].size}"
+    if threshold is not None:
+        text_str += f" within contour of {threshold:.2f} {colorbar_label}"
     ax.text(
         0.01,
         0.98,
-        f"Total parcels initialized: {parcels['j'].size}",
+        text_str,
         transform=ax.transAxes,
         ha="left",
         va="top",
@@ -1698,7 +1706,7 @@ def plot_parcel_arrival_height_map(
             c="red",
             edgecolors="black",
             linewidths=0.4,
-            zorder=5,
+            zorder=7,
             transform=ccrs.PlateCarree(),
         )
         if receptor_radius_m is not None and receptor_radius_m > 0:
@@ -2831,6 +2839,7 @@ def main(args):
                 total_parcels=int(arrived_mask_full.sum()),
             ),
             metadata=dict(
+                start_time=times_arr[it_start],
                 start_time_index=it_start,
                 finish_time_index=finish_idx,
                 parcels_initialized=parcels_init["j"].size,
