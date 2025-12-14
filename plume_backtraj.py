@@ -402,6 +402,7 @@ def advect_parcels_backward_wrf(
     receptor_max_h=30000.0,
     emission_start_time=None,
     emission_end_time=None,
+    start_time_index=None,
     integration_dt=15.0,
     snapshot_config=None,
     settling_profile=None,
@@ -425,6 +426,7 @@ def advect_parcels_backward_wrf(
     snapshot_config: optional dict containing plotting settings
     settling_profile: dict with 'heights_m' and 'velocity_ms' or None
     settling_recalc_interval: seconds between settling refreshes
+    start_time_index: optional int; if provided, sets the initial time index for advection
     """
     u = np.asarray(u)
     v = np.asarray(v)
@@ -467,7 +469,11 @@ def advect_parcels_backward_wrf(
         return sec_val
 
     # Determine starting time index for advection
-    it_start = nt - 1
+    if start_time_index is not None:
+        it_start = int(start_time_index)
+        it_start = np.clip(it_start, 0, nt - 1)
+    else:
+        it_start = nt - 1
     it_finish = it_start
     dt_values = []
     finish_time_sec = t_sec[it_start]
@@ -2645,6 +2651,7 @@ def main(args):
         receptor_max_h=receptor_max_h,
         emission_start_time=emission_start_time,
         emission_end_time=emission_end_time,
+        start_time_index=it_start,
         integration_dt=integration_dt,
         snapshot_config=snapshot_config,
         settling_profile=settling_profile,
