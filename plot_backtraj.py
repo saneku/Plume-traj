@@ -8,6 +8,7 @@ from plume_backtraj import (
     plot_parcel_trajectories,
     plot_parcel_age_map,
     plot_parcel_arrival_height_map,
+    plot_parcel_emission_time_map,
     plot_missed_parcel_trajectories,
     plot_emission_matrix,
     _format_time_str, # Import the helper function
@@ -107,6 +108,44 @@ def main():
         colorbar_label=state["column"]["colorbar_label"],
         figure_dpi=dpi,
     )
+
+    emission_time_hours = state["trajectories"].get("emission_time_hours")
+    emission_start_time = state.get("metadata", {}).get("emission_start")
+    if emission_start_time is None:
+        emission_start_time = np.datetime64("2025-11-23T08:30:00")
+
+    if emission_time_hours is None:
+        arrival_age_hours = state["trajectories"].get("arrival_age_hours")
+        start_time = state.get("metadata", {}).get("start_time")
+        if arrival_age_hours is not None and start_time is not None and hasattr(start_time, "astype"):
+            start_time_sec = (
+                (start_time - emission_start_time) / np.timedelta64(1, "s")
+            ).astype(float)
+            emission_time_hours = start_time_sec / 3600.0 - np.asarray(arrival_age_hours, dtype=float)
+            print("[diag] Derived emission-time data from arrival ages using default emission start 2025-11-23 08:30 UTC.")
+        else:
+            print("[diag] No emission-time data in pickle and cannot derive it; skipping emission-time plot.")
+    if emission_time_hours is not None:
+        plot_parcel_emission_time_map(
+            column2d=column,
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=state["trajectories"]["i"],
+            trajectory_j=state["trajectories"]["j"],
+            trajectory_active=state["trajectories"]["active"],
+            parcel_indices=state["trajectories"]["indices_in_bins"],
+            parcel_emission_time_hours=emission_time_hours,
+            threshold=script_args["threshold"],
+            receptor_lat=script_args["receptor_lat"],
+            receptor_lon=script_args["receptor_lon"],
+            receptor_radius_m=script_args["receptor_radius"],
+            out_path="trajectory_emission_time_replot.png",
+            colorbar_label=state["column"]["colorbar_label"],
+            figure_dpi=dpi,
+            emission_start_time=emission_start_time,
+        )
+    else:
+        print("[diag] No emission-time plot generated.")
 
     plot_parcel_arrival_height_map(
         column2d=column,

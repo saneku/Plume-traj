@@ -65,6 +65,7 @@ python plume_backtraj.py \
  --arrival-bin-minutes 30 \
  --output-txt "$outdir/so2_emission_time_height.txt" --output-figure "$outdir/so2_emission_time_height.png" \
  --trajectory-figure "$outdir/so2_trajectories.png" --trajectory-age "$outdir/so2_trajectory_ages.png"  \
+ --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
  --seeds-figure "$outdir/parcel_initial_locations.png" \
  --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
  --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
@@ -95,6 +96,7 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --output-figure           "$outdir/emission_time_height.png" \
         --trajectory-figure       "$outdir/trajectories.png" \
         --trajectory-age          "$outdir/trajectory_ages.png" \
+        --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
         --seeds-figure "$outdir/parcel_initial_locations.png" \
         --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
         --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
@@ -1571,6 +1573,208 @@ def plot_parcel_age_map(
     return True
 
 
+def plot_parcel_emission_time_map(
+    column2d,
+    xlat,
+    xlon,
+    trajectory_i,
+    trajectory_j,
+    trajectory_active,
+    parcel_indices,
+    parcel_emission_time_hours,
+    threshold,
+    receptor_lat,
+    receptor_lon,
+    receptor_radius_m,
+    out_path,
+    colorbar_label="Column value",
+    figure_dpi=200,
+    emission_start_time=None,
+):
+    """Plot parcel trajectories coloured by emission time (hours since emission start)."""
+    parcel_indices = np.asarray(parcel_indices, dtype=int)
+    emission_hours = np.asarray(parcel_emission_time_hours, dtype=float)
+    valid = np.isfinite(emission_hours)
+    parcel_indices = parcel_indices[valid]
+    emission_hours = emission_hours[valid]
+
+    if parcel_indices.size == 0:
+        print("[diag] No emission-time data available; skipping emission-time figure.")
+        return False
+
+    column2d = np.asarray(column2d)
+    if np.ma.isMaskedArray(column2d):
+        column2d = column2d.filled(np.nan)
+    xlat = np.asarray(xlat)
+    if np.ma.isMaskedArray(xlat):
+        xlat = xlat.filled(np.nan)
+    xlon = np.asarray(xlon)
+    if np.ma.isMaskedArray(xlon):
+        xlon = xlon.filled(np.nan)
+
+    traj_i = np.asarray(trajectory_i)
+    traj_j = np.asarray(trajectory_j)
+    active_hist = np.asarray(trajectory_active, dtype=bool)
+
+    ny, nx = column2d.shape
+    j_coords = np.arange(ny)
+    i_coords = np.arange(nx)
+    interp_lat = RegularGridInterpolator(
+        (j_coords, i_coords), xlat, bounds_error=False, fill_value=np.nan
+    )
+    interp_lon = RegularGridInterpolator(
+        (j_coords, i_coords), xlon, bounds_error=False, fill_value=np.nan
+    )
+
+    def indices_to_latlon(j_arr, i_arr):
+        pts = np.column_stack((j_arr, i_arr))
+        return interp_lat(pts), interp_lon(pts)
+
+    lat_hist = np.empty_like(traj_j, dtype=float)
+    lon_hist = np.empty_like(traj_i, dtype=float)
+    for t in range(traj_j.shape[0]):
+        lat_hist[t, :], lon_hist[t, :] = indices_to_latlon(traj_j[t, :], traj_i[t, :])
+
+    lon_min, lon_max = float(np.nanmin(xlon)), float(np.nanmax(xlon))
+    lat_min, lat_max = float(np.nanmin(xlat)), float(np.nanmax(xlat))
+    lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
+    lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+    ax.set_extent(
+        [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
+        crs=ccrs.PlateCarree(),
+    )
+
+    ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
+    ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
+    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color="gray", alpha=0.5, linestyle="--")
+    gl.top_labels = False
+    gl.right_labels = False
+
+    if threshold is not None:
+        ax.contour(
+            xlon,
+            xlat,
+            column2d,
+            levels=[threshold],
+            colors="black",
+            linewidths=1.2,
+            transform=ccrs.PlateCarree(),
+        )
+
+    n_bins = 10
+    t_min = float(np.nanmin(emission_hours))
+    t_max = float(np.nanmax(emission_hours))
+    if np.isclose(t_min, t_max):
+        t_max = t_min + 0.1
+    time_bins = np.linspace(t_min, t_max, n_bins + 1)
+    cmap = plt.get_cmap("gist_ncar", n_bins)
+    palette = cmap(np.arange(n_bins))
+    color_idx = np.digitize(emission_hours, time_bins) - 1
+    color_idx = np.clip(color_idx, 0, n_bins - 1)
+
+    lon = lon_hist[:, parcel_indices]
+    lat = lat_hist[:, parcel_indices]
+
+    segments = np.array(
+        [
+            np.stack([lon[:-1, :], lat[:-1, :]], axis=2),
+            np.stack([lon[1:, :], lat[1:, :]], axis=2),
+        ]
+    ).transpose(2, 1, 0, 3)
+
+    active_mask = (active_hist[:-1, parcel_indices] & active_hist[1:, parcel_indices]).T
+    masked_segments = segments[active_mask]
+
+    parcel_colors = palette[color_idx]
+    colors_for_segments = np.repeat(parcel_colors, active_mask.sum(axis=1), axis=0)
+
+    lc = LineCollection(
+        masked_segments,
+        colors=colors_for_segments,
+        linestyle=TRAJECTORY_LINESTYLE,
+        linewidth=TRAJECTORY_LINEWIDTH,
+        alpha=TRAJECTORY_ALPHA,
+        transform=ccrs.PlateCarree(),
+    )
+    ax.add_collection(lc)
+
+    start_lon = lon_hist[0, parcel_indices]
+    start_lat = lat_hist[0, parcel_indices]
+    ax.scatter(
+        start_lon,
+        start_lat,
+        s=PARCEL_MARKER_SIZE,
+        c=parcel_colors,
+        edgecolors=PARCEL_MARKER_EDGE,
+        linewidths=PARCEL_MARKER_LINEWIDTH,
+        zorder=6,
+        transform=ccrs.PlateCarree(),
+        alpha=PARCEL_MARKER_ALPHA,
+    )
+
+    if receptor_lat is not None and receptor_lon is not None:
+        ax.scatter(
+            receptor_lon,
+            receptor_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=7,
+            transform=ccrs.PlateCarree(),
+        )
+        if receptor_radius_m is not None and receptor_radius_m > 0:
+            ang = np.linspace(0, 2 * np.pi, 181)
+            lat_scale = 111320.0
+            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+            ax.plot(
+                lon_circle,
+                lat_circle,
+                color="red",
+                linestyle="--",
+                linewidth=1.0,
+                transform=ccrs.Geodetic(),
+            )
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    min_t = float(np.nanmin(emission_hours))
+    max_t = float(np.nanmax(emission_hours))
+    title_suffix = ""
+    if np.isfinite(min_t) and np.isfinite(max_t):
+        title_suffix = f" (min={min_t:.2f} h, max={max_t:.2f} h)"
+    ax.set_title("Parcel trajectories coloured by emission time" + title_suffix)
+
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    time_centers = time_bins[:-1] + 0.5 * np.diff(time_bins)
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(time_bins, cmap.N))
+    sm.set_array([])
+    cb = plt.colorbar(
+        sm,
+        cax=cax,
+        orientation="horizontal",
+        boundaries=time_bins,
+        ticks=time_centers,
+    )
+    cb.set_ticklabels([f"{val:.1f} h" for val in time_centers])
+    if emission_start_time is not None:
+        cb.set_label(
+            f"Hours since emission start ({np.datetime_as_string(emission_start_time, unit='m')})"
+        )
+    else:
+        cb.set_label("Emission time since reference (hours)")
+
+    fig.savefig(out_path, dpi=figure_dpi)
+    plt.close(fig)
+    return True
+
+
 def plot_parcel_arrival_height_map(
     column2d,
     xlat,
@@ -2164,6 +2368,11 @@ def parse_args():
         help="Optional PNG file for the parcel-age scatter plot (hours vs altitude).",
     )
     parser.add_argument(
+        "--trajectory-emission-time-figure",
+        default=None,
+        help="Optional PNG file for parcel trajectories coloured by emission time.",
+    )
+    parser.add_argument(
         "--trajectory-arrival-height-figure",
         default=None,
         help="Optional PNG file for parcel trajectories coloured by arrival height.",
@@ -2592,6 +2801,7 @@ def main(args):
     z_bin = np.digitize(arrival_z, z_edges, right=False) - 1
     z_bin = np.clip(z_bin, 0, nz_bins - 1)
 
+    emission_time_hours = np.maximum(arrival_time_sec, 0.0) / 3600.0
     arrival_age_hours = np.maximum(
         (start_time_sec - arrival_time_sec) / 3600.0, 0.0
     )
@@ -2735,6 +2945,31 @@ def main(args):
         if saved:
             print(f"[diag] Parcel-age figure saved to '{args.trajectory_age}'.")
 
+    if args.trajectory_emission_time_figure:
+        saved_emission = plot_parcel_emission_time_map(
+            column2d=column2d,
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=result["trajectory_i"],
+            trajectory_j=result["trajectory_j"],
+            trajectory_active=result["trajectory_active"],
+            parcel_indices=valid_parcel_indices,
+            parcel_emission_time_hours=emission_time_hours,
+            threshold=threshold,
+            receptor_lat=receptor_lat,
+            receptor_lon=receptor_lon,
+            receptor_radius_m=receptor_radius_m,
+            out_path=args.trajectory_emission_time_figure,
+            colorbar_label=args.colorbar_label,
+            figure_dpi=figure_dpi,
+            emission_start_time=emission_start_time,
+        )
+        if saved_emission:
+            print(
+                "[diag] Parcel emission-time figure saved to "
+                f"'{args.trajectory_emission_time_figure}'."
+            )
+
     if args.trajectory_arrival_height_figure:
         saved_height = plot_parcel_arrival_height_map(
             column2d=column2d,
@@ -2822,6 +3057,7 @@ def main(args):
                 arrived_mask=arrived_mask_full,
                 arrival_indices=arrived_indices,
                 indices_in_bins=valid_parcel_indices,
+                emission_time_hours=emission_time_hours,
                 arrival_age_hours=arrival_age_hours,
                 final_z=result["final_z"],
                 arrival_z=arrival_z,
