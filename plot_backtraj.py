@@ -34,6 +34,7 @@ def main():
     xlon = state["grid"]["xlon"]
     script_args = state["args"]
     dpi = script_args["figure_dpi"]
+    seed_bbox = tuple(script_args["seed_bbox"]) if script_args.get("seed_bbox") else None
 
     # Approximate initial-height array from trajectories (first k level)
     n_parcels = state["trajectories"]["i"].shape[1]
@@ -62,6 +63,7 @@ def main():
         receptor_lat=script_args["receptor_lat"],
         receptor_lon=script_args["receptor_lon"],
         receptor_radius_m=script_args["receptor_radius"],
+        seed_bbox=seed_bbox,
         out_path="trajectories_replot.png",
         colorbar_label=state["column"]["colorbar_label"],
         initial_heights=init_heights,
@@ -82,6 +84,7 @@ def main():
             receptor_lat=script_args["receptor_lat"],
             receptor_lon=script_args["receptor_lon"],
             receptor_radius_m=script_args["receptor_radius"],
+            seed_bbox=seed_bbox,
             colorbar_label=state["column"]["colorbar_label"],
             title=(
                 "Parcel seeds at "
@@ -107,6 +110,7 @@ def main():
         out_path="trajectory_ages_replot.png",
         colorbar_label=state["column"]["colorbar_label"],
         figure_dpi=dpi,
+        seed_bbox=seed_bbox,
     )
 
     emission_time_hours = state["trajectories"].get("emission_time_hours")
@@ -117,7 +121,11 @@ def main():
     if emission_time_hours is None:
         arrival_age_hours = state["trajectories"].get("arrival_age_hours")
         start_time = state.get("metadata", {}).get("start_time")
-        if arrival_age_hours is not None and start_time is not None and hasattr(start_time, "astype"):
+        
+        if start_time is not None:
+            start_time = np.datetime64(start_time)
+
+        if arrival_age_hours is not None and start_time is not None:
             start_time_sec = (
                 (start_time - emission_start_time) / np.timedelta64(1, "s")
             ).astype(float)
@@ -143,6 +151,7 @@ def main():
             colorbar_label=state["column"]["colorbar_label"],
             figure_dpi=dpi,
             emission_start_time=emission_start_time,
+            seed_bbox=seed_bbox,
         )
     else:
         print("[diag] No emission-time plot generated.")
@@ -165,6 +174,7 @@ def main():
         figure_dpi=dpi,
         height_min=script_args.get("z_min"),
         height_max=script_args.get("z_max"),
+        seed_bbox=seed_bbox,
     )
 
     missed_indices = np.where(~state["trajectories"]["arrived_mask"])[0]
@@ -187,6 +197,7 @@ def main():
             z_min=script_args.get("z_min"),
             z_max=script_args.get("z_max"),
             figure_dpi=dpi,
+            seed_bbox=seed_bbox,
         )
 
     plot_emission_matrix(

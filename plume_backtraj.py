@@ -44,9 +44,9 @@ TRAJECTORY_ALPHA = 0.5
 
 '''
 nohup 
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5_4km/wrfout_d01_2025-11-23_06:00:00'
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00'
 COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
-
+COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 
 #SO2
 
@@ -57,8 +57,8 @@ python plume_backtraj.py \
  --start-time '2025-11-24T10:00:00' \
  --column "$COLUMN" --integration-dt 15\
  --so2-efolding-days 35 \
- --column-var 'sulfurdioxide_total_vertical_column_15km' --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
- --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
+ --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
+ --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
  --receptor-lat 13.51 --receptor-lon 40.71 \
  --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
@@ -71,11 +71,13 @@ python plume_backtraj.py \
  --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
  --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
  --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl"
+ #--seed-bbox 40. 10 40.1 10.1
 
 
 #Aerosols
 WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5_4km/wrfout_d01_2025-11-23_06:00:00'
 COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc'
+COLUMN_VAR='aerosol_index_354_388'
 
 for aer in sulf ash10 ash9 ash8 ash7 ash6; do
     outdir="./${aer}_run"
@@ -86,8 +88,8 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --aer-type "$aer" \
         --start-time '2025-11-24T10:00:00' \
         --column "$COLUMN" --integration-dt 15 \
-        --column-var 'aerosol_index_354_388' --column-coef 1 --threshold 0.10 --colorbar-label 'Aerosol Index' \
-        --n-columns 50 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 30000 \
+        --column-var "$COLUMN_VAR" --column-coef 1 --threshold 0.10 --colorbar-label 'Aerosol Index' \
+        --n-columns 50 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
         --emission-start '2025-11-23T08:30:00' --emission-end   '2025-11-24T10:00:00' \
         --receptor-lat 13.51 --receptor-lon 40.71 \
         --receptor-radius 10000 --receptor-min-h 1000 --receptor-max-h 30000 \
@@ -144,6 +146,20 @@ def _init_geo_axes(lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, figsize
     gl.xlabel_style = {"size": 10}
     gl.ylabel_style = {"size": 10}
     return fig, ax
+
+
+def _plot_seed_bbox(ax, seed_bbox):
+    """Draw the seed bounding box as a dotted black outline if provided."""
+    if seed_bbox is None:
+        return
+    lon_min, lat_min, lon_max, lat_max = seed_bbox
+    if lon_min > lon_max:
+        lon_min, lon_max = lon_max, lon_min
+    if lat_min > lat_max:
+        lat_min, lat_max = lat_max, lat_min
+    lons = [lon_min, lon_max, lon_max, lon_min, lon_min]
+    lats = [lat_min, lat_min, lat_max, lat_max, lat_min]
+    ax.plot(lons, lats, color="black", linestyle=":", linewidth=1.0, transform=ccrs.PlateCarree(), zorder=5)
 
 
 def read_wrf_geometry_and_winds(wrfout_path):
@@ -264,12 +280,19 @@ def generate_parcels_from_column_wrf(
             lon_min, lon_max = lon_max, lon_min
         if lat_min > lat_max:
             lat_min, lat_max = lat_max, lat_min
-        bbox_mask = (xlon >= lon_min) & (xlon <= lon_max) & (xlat >= lat_min) & (xlat <= lat_max)
-        mask &= bbox_mask
-        _diag(
-            "Restricting seed region to box "
-            f"lon[{lon_min:.3f},{lon_max:.3f}], lat[{lat_min:.3f},{lat_max:.3f}]."
-        )
+        if xlat.shape != column2d.shape or xlon.shape != column2d.shape:
+            _diag(
+                "Seed bbox provided but xlat/xlon shape "
+                f"{xlat.shape}/{xlon.shape} does not match column shape {column2d.shape}; "
+                "skipping bbox restriction."
+            )
+        else:
+            bbox_mask = (xlon >= lon_min) & (xlon <= lon_max) & (xlat >= lat_min) & (xlat <= lat_max)
+            mask &= bbox_mask
+            _diag(
+                "Restricting seed region to box "
+                f"lon[{lon_min:.3f},{lon_max:.3f}], lat[{lat_min:.3f},{lat_max:.3f}]."
+            )
     plume_cells = np.argwhere(mask)  # list of (j, i)
 
     if plume_cells.size == 0:
@@ -835,6 +858,7 @@ def advect_parcels_backward_wrf(
                 receptor_lat=snapshot_config.get("receptor_lat"),
                 receptor_lon=snapshot_config.get("receptor_lon"),
                 receptor_radius_m=snapshot_config.get("receptor_radius_m"),
+                seed_bbox=snapshot_config.get("seed_bbox"),
                 figure_dpi=figure_dpi,
             )
             print(f"[diag] Snapshot saved to '{snapshot_path}'.")
@@ -902,6 +926,7 @@ def plot_parcel_locations(
     receptor_lat=None,
     receptor_lon=None,
     receptor_radius_m=None,
+    seed_bbox=None,
     colorbar_label="Column value",
     figure_dpi=200,
 ):
@@ -1239,6 +1264,7 @@ def plot_parcel_trajectories(
     z_min=None,
     z_max=None,
     figure_dpi=200,
+    seed_bbox=None,
 ):
     """Plot parcel trajectories using stored hourly positions."""
     column2d = np.asarray(column2d)
@@ -1382,6 +1408,8 @@ def plot_parcel_trajectories(
             lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
             ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.0, transform=ccrs.Geodetic())
 
+    _plot_seed_bbox(ax, seed_bbox)
+
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     min_init = float(np.nanmin(init_heights_subset)) if init_heights_subset is not None else float("nan")
@@ -1427,6 +1455,7 @@ def plot_parcel_age_map(
     out_path,
     colorbar_label="Column value",
     figure_dpi=200,
+    seed_bbox=None,
 ):
     """Plot parcel trajectories coloured by arrival age."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1551,6 +1580,8 @@ def plot_parcel_age_map(
             lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
             ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.0, transform=ccrs.Geodetic())
 
+    _plot_seed_bbox(ax, seed_bbox)
+
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     min_age = float(np.nanmin(ages_subset)) if ages_subset.size else float("nan")
@@ -1596,6 +1627,7 @@ def plot_parcel_emission_time_map(
     colorbar_label="Column value",
     figure_dpi=200,
     emission_start_time=None,
+    seed_bbox=None,
 ):
     """Plot parcel trajectories coloured by emission time (hours since emission start)."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1748,6 +1780,8 @@ def plot_parcel_emission_time_map(
                 transform=ccrs.Geodetic(),
             )
 
+    _plot_seed_bbox(ax, seed_bbox)
+
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     min_t = float(np.nanmin(emission_hours))
@@ -1799,6 +1833,7 @@ def plot_parcel_arrival_height_map(
     figure_dpi=200,
     height_min=None,
     height_max=None,
+    seed_bbox=None,
 ):
     """Plot parcel trajectories coloured by their arrival heights."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1934,6 +1969,8 @@ def plot_parcel_arrival_height_map(
                 transform=ccrs.PlateCarree(),
             )
 
+    _plot_seed_bbox(ax, seed_bbox)
+
     n_snap = lat_hist.shape[0]
     if parcel_indices.size > 0:
         parcel_colors = palette[color_idx]
@@ -2025,6 +2062,7 @@ def plot_missed_parcel_trajectories(
     z_min=None,
     z_max=None,
     figure_dpi=200,
+    seed_bbox=None,
 ):
     """Plot trajectories of parcels that did not reach the receptor."""
     missed_flags = ~np.asarray(arrived_flags, dtype=bool)
@@ -2162,6 +2200,8 @@ def plot_missed_parcel_trajectories(
             lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
             lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
             ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.2, transform=ccrs.Geodetic(), zorder=8)
+
+    _plot_seed_bbox(ax, seed_bbox)
 
     # --- Labels and Colorbar ---
     ax.set_xlabel("Longitude")
@@ -2472,6 +2512,11 @@ def main(args):
     times = grid["times"]
 
     times_arr = np.asarray(times)
+    model_max_height = float(np.nanmax(z_center))
+    if z_max is not None and np.isfinite(z_max) and z_max > model_max_height:
+        raise ValueError(
+            f"Requested z_max={z_max:.1f} m exceeds model top {model_max_height:.1f} m."
+        )
 
     # Parse eruption start time (optional)
     emission_start_time = None
@@ -2599,6 +2644,7 @@ def main(args):
             receptor_lat=receptor_lat,
             receptor_lon=receptor_lon,
             receptor_radius_m=receptor_radius_m,
+            seed_bbox=seed_bbox,
             colorbar_label=args.colorbar_label,
             title=plot_title,
             figure_dpi=figure_dpi,
@@ -2618,18 +2664,19 @@ def main(args):
 
     snapshot_config = None
     if args.hourly_figures:
-        snapshot_config = dict(
-            column2d=column2d,
-            xlat=xlat,
-            xlon=xlon,
-            threshold=threshold,
-            receptor_lat=receptor_lat,
-            receptor_lon=receptor_lon,
-            receptor_radius_m=receptor_radius_m,
-            output_dir=Path("."),
-            prefix="parcel_positions_hour_",
-            total_steps=it_start,
-        )
+            snapshot_config = dict(
+                column2d=column2d,
+                xlat=xlat,
+                xlon=xlon,
+                threshold=threshold,
+                receptor_lat=receptor_lat,
+                receptor_lon=receptor_lon,
+                receptor_radius_m=receptor_radius_m,
+                seed_bbox=seed_bbox,
+                output_dir=Path("."),
+                prefix="parcel_positions_hour_",
+                total_steps=it_start,
+            )
 
     result = advect_parcels_backward_wrf(
         parcels=parcels_init,
@@ -2676,6 +2723,7 @@ def main(args):
         z_min=z_min,
         z_max=z_max,
         figure_dpi=figure_dpi,
+        seed_bbox=seed_bbox,
     )
     print(f"[diag] Trajectory figure saved to '{args.trajectory_figure}'.")
 
@@ -2698,6 +2746,7 @@ def main(args):
             z_min=z_min,
             z_max=z_max,
             figure_dpi=figure_dpi,
+            seed_bbox=seed_bbox,
         )
         print(f"[diag] Missed trajectory figure saved to '{args.missed_trajectory_figure}'.")
 
@@ -2948,6 +2997,7 @@ def main(args):
             out_path=args.trajectory_age,
             colorbar_label=args.colorbar_label,
             figure_dpi=figure_dpi,
+            seed_bbox=seed_bbox,
         )
         if saved:
             print(f"[diag] Parcel-age figure saved to '{args.trajectory_age}'.")
@@ -2970,6 +3020,7 @@ def main(args):
             colorbar_label=args.colorbar_label,
             figure_dpi=figure_dpi,
             emission_start_time=emission_start_time,
+            seed_bbox=seed_bbox,
         )
         if saved_emission:
             print(
@@ -2996,6 +3047,7 @@ def main(args):
             figure_dpi=figure_dpi,
             height_min=z_min,
             height_max=z_max,
+            seed_bbox=seed_bbox,
         )
         if saved_height:
             print(
