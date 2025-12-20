@@ -1,4 +1,4 @@
-#python sum_and_plot_ash_data.py ../4km
+#python aggregate_backtraj.py ../4km
 
 import argparse
 import pickle
@@ -22,7 +22,7 @@ from plume_backtraj import (
 )
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Aggregate and plot trajectories from multiple ash run directories.")
+    parser = argparse.ArgumentParser(description="Aggregate and plot trajectories from multiple back-trajectory run directories.")
     parser.add_argument(
         "dir_prefix",
         help="Directory prefix containing the ash run directories (e.g., '../4km')."

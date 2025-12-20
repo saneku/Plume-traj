@@ -18,7 +18,7 @@ from netCDF4 import Dataset
 from scipy.interpolate import RegularGridInterpolator
 #from datetime import datetime
 
-from settling_velocity_data import SETTLING_VEL_MS, Z_M
+from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 
 
 
@@ -106,12 +106,8 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl"
 done
 
-
-#todo: add so2 oxidation in reverse direction
-
  --aer-type can be 'sulf', 'ash1', … 'ash10'
  --seed-bbox 37 9 43 11
- >& run.log &
 
 # --hourly-figures
 #--seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png" \

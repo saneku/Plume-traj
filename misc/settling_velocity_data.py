@@ -1,4 +1,8 @@
-"""Settling velocity reference data extracted from aerosol_settl_vel.py."""
+"""Settling velocity reference data extracted from aerosol_settl_vel.py.
+Based on: Ukhov, A., Stenchikov, G., Schnell, J., Ahmadov, R., Rizza, U., Grell, G., and Hoteit, I.: 
+Enhancing volcanic eruption simulations with the WRF-Chem v4.8, Geosci. Model Dev., 18, 9805–9825, 
+https://doi.org/10.5194/gmd-18-9805-2025, 2025."""
+
 Z_M = [
     26.6584510803,
     87.1093444824,

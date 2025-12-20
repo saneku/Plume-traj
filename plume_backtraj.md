@@ -313,6 +313,16 @@ The helper script restores DPI/labels from the pickle and produces the full suit
 
 ## 6. Example Command
 
+Minimal back-trajectory run:
+
+```bash
+python plume_backtraj.py \
+  --wrfout wrfout_d01_2021-04-10_18:00:00.nc \
+  --column so2_column_on_wrf_grid.nc \
+  --receptor-lat 45.0 \
+  --receptor-lon 10.0
+```
+
 Example usage for a volcano at 45°N, 10°E, 10 km receptor radius, 1‑hour time bins:
 
 ```bash
@@ -341,3 +351,18 @@ python plume_backtraj.py \
 ```
 
 You can copy `plume_backtraj.py` and this `plume_backtraj.md` file to another computer, install the required Python packages, and reuse the same command-line interface there.
+
+---
+
+## 7. Notes on Input Data
+
+- The SO2 column file must already be on the WRF grid (`south_north`, `west_east`).
+- If the column file has a time dimension, the script uses the time index matching the chosen WRF start time.
+- Ensure `--z-min/--z-max` are within the WRF model top; the script will error if `z-max` exceeds it.
+
+---
+
+## 8. Troubleshooting
+
+- **No parcels reach the receptor**: check receptor location/radius and the plume threshold.
+- **Cartopy errors**: install `cartopy` with conda if pip wheels are not available for your system.
