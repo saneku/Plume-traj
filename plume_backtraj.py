@@ -70,7 +70,8 @@ python plume_backtraj.py \
  --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
  --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
  --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
- --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl"
+ --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
+ --map-extent 35 5 65 30
  #--seed-bbox 40. 10 40.1 10.1
 
 
@@ -103,7 +104,8 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
         --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
         --missed-trajectory-figure        "$outdir/missed_trajectories.png" \
-        --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl"
+        --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl" \
+        --map-extent 35 5 65 30
 done
 
  --aer-type can be 'sulf', 'ash1', … 'ash10'
@@ -118,16 +120,34 @@ done
 PLATE_CARREE = ccrs.PlateCarree()
 
 
-def _init_geo_axes(lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, figsize=(10, 8)):
+def _normalize_map_extent(map_extent):
+    """Convert (WEST, SOUTH, EAST, NORTH) to Cartopy extent order."""
+    west, south, east, north = map_extent
+    return [west, east, south, north]
+
+
+def _init_geo_axes(
+    lon_min,
+    lon_max,
+    lat_min,
+    lat_max,
+    lon_pad,
+    lat_pad,
+    figsize=(10, 8),
+    map_extent=None,
+):
     """Initialize a Cartopy PlateCarree map with coastlines, borders, and gridlines."""
     fig, ax = plt.subplots(
         figsize=figsize,
         subplot_kw={"projection": PLATE_CARREE},
     )
-    ax.set_extent(
-        [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
-        crs=PLATE_CARREE,
-    )
+    if map_extent is not None:
+        ax.set_extent(_normalize_map_extent(map_extent), crs=PLATE_CARREE)
+    else:
+        ax.set_extent(
+            [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
+            crs=PLATE_CARREE,
+        )
     ax.coastlines(resolution="50m", linewidth=0.6, color="gray")
     ax.add_feature(cfeature.BORDERS.with_scale("50m"), linewidth=0.4, edgecolor="gray")
     gl = ax.gridlines(
@@ -856,6 +876,7 @@ def advect_parcels_backward_wrf(
                 receptor_radius_m=snapshot_config.get("receptor_radius_m"),
                 seed_bbox=snapshot_config.get("seed_bbox"),
                 figure_dpi=figure_dpi,
+                map_extent=snapshot_config.get("map_extent"),
             )
             print(f"[diag] Snapshot saved to '{snapshot_path}'.")
 
@@ -925,6 +946,7 @@ def plot_parcel_locations(
     seed_bbox=None,
     colorbar_label="Column value",
     figure_dpi=200,
+    map_extent=None,
 ):
     """Plot sampled parcel locations on top of the column field."""
     column2d = np.asarray(column2d)
@@ -964,7 +986,10 @@ def plot_parcel_locations(
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
+    if map_extent is not None:
+        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
+    else:
+        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
 
     mesh = ax.pcolormesh(xlon, xlat, column2d, shading="auto", cmap="plasma", transform=ccrs.PlateCarree())
     ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
@@ -1261,6 +1286,7 @@ def plot_parcel_trajectories(
     z_max=None,
     figure_dpi=200,
     seed_bbox=None,
+    map_extent=None,
 ):
     """Plot parcel trajectories using stored hourly positions."""
     column2d = np.asarray(column2d)
@@ -1308,7 +1334,10 @@ def plot_parcel_trajectories(
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
+    if map_extent is not None:
+        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
+    else:
+        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
 
     ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
     ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
@@ -1452,6 +1481,7 @@ def plot_parcel_age_map(
     colorbar_label="Column value",
     figure_dpi=200,
     seed_bbox=None,
+    map_extent=None,
 ):
     """Plot parcel trajectories coloured by arrival age."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1504,7 +1534,10 @@ def plot_parcel_age_map(
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
+    if map_extent is not None:
+        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
+    else:
+        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
 
     ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
     ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
@@ -1624,6 +1657,7 @@ def plot_parcel_emission_time_map(
     figure_dpi=200,
     emission_start_time=None,
     seed_bbox=None,
+    map_extent=None,
 ):
     """Plot parcel trajectories coloured by emission time (hours since emission start)."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1676,10 +1710,13 @@ def plot_parcel_emission_time_map(
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    ax.set_extent(
-        [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
-        crs=ccrs.PlateCarree(),
-    )
+    if map_extent is not None:
+        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
+    else:
+        ax.set_extent(
+            [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
+            crs=ccrs.PlateCarree(),
+        )
 
     ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
     ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
@@ -1830,6 +1867,7 @@ def plot_parcel_arrival_height_map(
     height_min=None,
     height_max=None,
     seed_bbox=None,
+    map_extent=None,
 ):
     """Plot parcel trajectories coloured by their arrival heights."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
@@ -1897,6 +1935,7 @@ def plot_parcel_arrival_height_map(
         lon_pad,
         lat_pad,
         figsize=(10, 8),
+        map_extent=map_extent,
     )
 
     n_bins = 10
@@ -2059,6 +2098,7 @@ def plot_missed_parcel_trajectories(
     z_max=None,
     figure_dpi=200,
     seed_bbox=None,
+    map_extent=None,
 ):
     """Plot trajectories of parcels that did not reach the receptor."""
     missed_flags = ~np.asarray(arrived_flags, dtype=bool)
@@ -2097,7 +2137,9 @@ def plot_missed_parcel_trajectories(
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
 
-    fig, ax = _init_geo_axes(lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad)
+    fig, ax = _init_geo_axes(
+        lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, map_extent=map_extent
+    )
 
     if threshold is not None:
         ax.contour(xlon, xlat, column2d, levels=[threshold], colors="black", linewidths=1.2, transform=ccrs.PlateCarree())
@@ -2431,6 +2473,13 @@ def parse_args():
         help="DPI resolution for all saved figures.",
     )
     parser.add_argument(
+        "--map-extent",
+        nargs=4,
+        type=float,
+        metavar=("WEST", "SOUTH", "EAST", "NORTH"),
+        help="Optional map extent override (west/south/east/north bounds) for all plots.",
+    )
+    parser.add_argument(
         "--state-pickle",
         default=None,
         help="Optional path to store a pickle with all inputs/results for re-plotting.",
@@ -2482,6 +2531,7 @@ def main(args):
     receptor_min_h = args.receptor_min_h
     receptor_max_h = args.receptor_max_h
     integration_dt = args.integration_dt
+    map_extent = tuple(args.map_extent) if args.map_extent is not None else None
 
     settling_profile = None
     if args.aer_type is not None:
@@ -2644,6 +2694,7 @@ def main(args):
             colorbar_label=args.colorbar_label,
             title=plot_title,
             figure_dpi=figure_dpi,
+            map_extent=map_extent,
         )
         print(f"[diag] Parcel-location map saved to '{args.seeds_figure}'.")
 
@@ -2669,6 +2720,7 @@ def main(args):
                 receptor_lon=receptor_lon,
                 receptor_radius_m=receptor_radius_m,
                 seed_bbox=seed_bbox,
+                map_extent=map_extent,
                 output_dir=Path("."),
                 prefix="parcel_positions_hour_",
                 total_steps=it_start,
@@ -2720,6 +2772,7 @@ def main(args):
         z_max=z_max,
         figure_dpi=figure_dpi,
         seed_bbox=seed_bbox,
+        map_extent=map_extent,
     )
     print(f"[diag] Trajectory figure saved to '{args.trajectory_figure}'.")
 
@@ -2743,6 +2796,7 @@ def main(args):
             z_max=z_max,
             figure_dpi=figure_dpi,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
         print(f"[diag] Missed trajectory figure saved to '{args.missed_trajectory_figure}'.")
 
@@ -2994,6 +3048,7 @@ def main(args):
             colorbar_label=args.colorbar_label,
             figure_dpi=figure_dpi,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
         if saved:
             print(f"[diag] Parcel-age figure saved to '{args.trajectory_age}'.")
@@ -3017,6 +3072,7 @@ def main(args):
             figure_dpi=figure_dpi,
             emission_start_time=emission_start_time,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
         if saved_emission:
             print(
@@ -3044,6 +3100,7 @@ def main(args):
             height_min=z_min,
             height_max=z_max,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
         if saved_height:
             print(

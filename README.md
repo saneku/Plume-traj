@@ -41,6 +41,7 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Full argument lists
 - Plot outputs and diagnostics
 - Re-plotting from saved pickle state
+- Optional `--map-extent WEST SOUTH EAST NORTH` override for custom map bounds
 
 ## Output Files
 

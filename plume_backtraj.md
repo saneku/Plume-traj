@@ -158,6 +158,9 @@ Full argument list:
 - `--figure-dpi` (default: `200`)  
   Resolution (dots per inch) applied to every generated PNG figure.
 
+- `--map-extent WEST SOUTH EAST NORTH` (optional)  
+  Override the map extent for all Cartopy plots (west/south/east/north bounds). If omitted, the WRF domain bounds are used.
+
 - `--state-pickle` (optional)  
   Path to a pickle file where the script will store all essential inputs and computed outputs (column field, trajectories, emission matrix, etc.). You can load this file later to regenerate figures without rerunning the back-trajectory calculations.
 

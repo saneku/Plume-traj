@@ -6,6 +6,9 @@ import sys
 import numpy as np
 from pathlib import Path
 
+#python misc/aggregate_backtraj.py ./4km --map-extent 35 5 65 30
+
+
 # Add parent directory to path to import plume_backtraj
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -26,6 +29,13 @@ def parse_args():
     parser.add_argument(
         "dir_prefix",
         help="Directory prefix containing the ash run directories (e.g., '../4km')."
+    )
+    parser.add_argument(
+        "--map-extent",
+        nargs=4,
+        type=float,
+        metavar=("WEST", "SOUTH", "EAST", "NORTH"),
+        help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
     return parser.parse_args()
 
@@ -211,6 +221,12 @@ def main():
     script_args = state["args"]
     dpi = script_args.get("figure_dpi", 100)
     seed_bbox = tuple(script_args["seed_bbox"]) if script_args.get("seed_bbox") else None
+    if args.map_extent is not None:
+        map_extent = tuple(args.map_extent)
+    else:
+        map_extent = script_args.get("map_extent")
+        if map_extent is not None:
+            map_extent = tuple(map_extent)
 
     # Approximate initial-height array from trajectories
     n_parcels = state["trajectories"]["i"].shape[1]
@@ -247,6 +263,7 @@ def main():
         z_min=script_args.get("z_min"),
         z_max=script_args.get("z_max"),
         figure_dpi=dpi,
+        map_extent=map_extent,
     )
 
     if "initial_parcels" in state and state["initial_parcels"]:
@@ -269,6 +286,7 @@ def main():
                 f"(WRF index {state['metadata']['start_time_index']})"
             ),
             figure_dpi=dpi,
+            map_extent=map_extent,
         )
 
     print("[diag] Plotting aggregated age map...")
@@ -289,6 +307,7 @@ def main():
         colorbar_label=state["column"]["colorbar_label"],
         figure_dpi=dpi,
         seed_bbox=seed_bbox,
+        map_extent=map_extent,
     )
 
     emission_time_hours = state["trajectories"].get("emission_time_hours")
@@ -338,6 +357,7 @@ def main():
             figure_dpi=dpi,
             emission_start_time=emission_start_time,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
     else:
         print("[diag] No emission-time plot generated (data unavailable).")
@@ -362,6 +382,7 @@ def main():
         height_min=script_args.get("z_min"),
         height_max=script_args.get("z_max"),
         seed_bbox=seed_bbox,
+        map_extent=map_extent,
     )
 
     missed_indices = np.where(~state["trajectories"]["arrived_mask"])[0]
@@ -386,6 +407,7 @@ def main():
             z_max=script_args.get("z_max"),
             figure_dpi=dpi,
             seed_bbox=seed_bbox,
+            map_extent=map_extent,
         )
 
     print("[diag] Plotting aggregated emission matrix...")

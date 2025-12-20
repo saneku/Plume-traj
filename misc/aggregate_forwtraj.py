@@ -16,7 +16,8 @@ python misc/aggregate_forwtraj.py \
   --pattern "./forward_run_*.pkl" \
   --height-figure plume_height_colored_aggregate.png \
   --age-figure plume_age_colored_aggregate.png \
-  --seeds-vertical-figure seeds_vertical_aggregate.png
+  --seeds-vertical-figure seeds_vertical_aggregate.png \
+  --map-extent 35 5 65 30
 '''
 
 
@@ -49,6 +50,13 @@ def parse_args():
         "--seeds-vertical-figure",
         default=None,
         help="Optional PNG for the initial vertical distribution of parcels.",
+    )
+    parser.add_argument(
+        "--map-extent",
+        nargs=4,
+        type=float,
+        metavar=("WEST", "SOUTH", "EAST", "NORTH"),
+        help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
     return parser.parse_args()
 
@@ -153,6 +161,12 @@ def main():
     z_max = script_args.get("z_max")
     source_lat = script_args.get("source_lat")
     source_lon = script_args.get("source_lon")
+    if args.map_extent is not None:
+        map_extent = tuple(args.map_extent)
+    else:
+        map_extent = script_args.get("map_extent")
+        if map_extent is not None:
+            map_extent = tuple(map_extent)
 
     plot_trajectories_by_height(
         xlat=xlat,
@@ -168,6 +182,7 @@ def main():
         seed_bbox=seed_bbox,
         source_lat=source_lat,
         source_lon=source_lon,
+        map_extent=map_extent,
     )
 
     plot_trajectories_by_age(
@@ -182,6 +197,7 @@ def main():
         seed_bbox=seed_bbox,
         source_lat=source_lat,
         source_lon=source_lon,
+        map_extent=map_extent,
     )
 
     if args.seeds_vertical_figure is not None:

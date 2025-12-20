@@ -30,7 +30,8 @@ python plume_forwtraj.py \
   --age-figure plume_age_colored.png \
   --height-figure plume_height_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
-  --state-pickle forward_run.pkl
+  --state-pickle forward_run.pkl \
+  --map-extent 35 5 65 30
   ##--seed-bbox 40.0 10.0 50.1 20.1 --n-columns 25 \
   
   
@@ -633,12 +634,14 @@ def compute_height_history(
     return height_hist
 
 
-def _plot_trajectory_map_base(xlat, xlon):
+def _plot_trajectory_map_base(xlat, xlon, map_extent=None):
     lon_min, lon_max = float(np.nanmin(xlon)), float(np.nanmax(xlon))
     lat_min, lat_max = float(np.nanmin(xlat)), float(np.nanmax(xlat))
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
-    fig, ax = _init_geo_axes(lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad)
+    fig, ax = _init_geo_axes(
+        lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, map_extent=map_extent
+    )
     gl = ax.gridlines(draw_labels=True, linewidth=0.2, color="gray", alpha=0.5, linestyle="--")
     gl.top_labels = False
     gl.right_labels = False
@@ -682,6 +685,7 @@ def plot_trajectories_by_height(
     seed_bbox=None,
     source_lat=None,
     source_lon=None,
+    map_extent=None,
 ):
     """Plot trajectories colored by parcel height along the path."""
     heights_m = np.asarray(height_hist_m, dtype=float)
@@ -694,7 +698,7 @@ def plot_trajectories_by_height(
     active_hist = np.asarray(trajectory_active, dtype=bool)
     lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
 
-    fig, ax = _plot_trajectory_map_base(xlat, xlon)
+    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
 
     n_bins = 10
     data_min_m = float(np.nanmin(heights_m))
@@ -801,6 +805,7 @@ def plot_trajectories_by_age(
     seed_bbox=None,
     source_lat=None,
     source_lon=None,
+    map_extent=None,
 ):
     """Plot trajectories colored by parcel age since release."""
     traj_i = np.asarray(trajectory_i)
@@ -814,7 +819,7 @@ def plot_trajectories_by_age(
         return False
     age_hours = (traj_times - traj_times[0]) / 3600.0
 
-    fig, ax = _plot_trajectory_map_base(xlat, xlon)
+    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
 
     n_bins = 10
     age_min = float(np.nanmin(age_hours))
@@ -984,6 +989,13 @@ def parse_args():
         help="DPI resolution for saved figures.",
     )
     parser.add_argument(
+        "--map-extent",
+        nargs=4,
+        type=float,
+        metavar=("WEST", "SOUTH", "EAST", "NORTH"),
+        help="Optional map extent override (west/south/east/north bounds) for all plots.",
+    )
+    parser.add_argument(
         "--state-pickle",
         default=None,
         help="Optional path to store a pickle with inputs/results for re-plotting.",
@@ -1123,6 +1135,7 @@ def main(args):
     final_heights = height_hist[last_active_time_idx, np.arange(height_hist.shape[1])]
 
     fig_dpi = max(50, int(args.figure_dpi))
+    map_extent = tuple(args.map_extent) if args.map_extent is not None else None
     saved_height = plot_trajectories_by_height(
         xlat=xlat,
         xlon=xlon,
@@ -1137,6 +1150,7 @@ def main(args):
         seed_bbox=args.seed_bbox,
         source_lat=args.source_lat,
         source_lon=args.source_lon,
+        map_extent=map_extent,
     )
     if saved_height:
         print(f"[diag] Height-colored figure saved to '{args.height_figure}'.")
@@ -1153,6 +1167,7 @@ def main(args):
         seed_bbox=args.seed_bbox,
         source_lat=args.source_lat,
         source_lon=args.source_lon,
+        map_extent=map_extent,
     )
     if saved_age:
         print(f"[diag] Age-colored figure saved to '{args.age_figure}'.")

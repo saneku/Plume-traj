@@ -110,6 +110,9 @@ Full argument list:
 - `--figure-dpi` (default: `200`)  
   DPI used for all figures.
 
+- `--map-extent WEST SOUTH EAST NORTH` (optional)  
+  Override the map extent for all plots (west/south/east/north bounds). If omitted, the WRF domain bounds are used.
+
 - `--state-pickle` (optional)  
   Path for a pickle file storing inputs and trajectories for re-plotting.
 
