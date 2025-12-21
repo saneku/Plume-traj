@@ -6,7 +6,7 @@ import sys
 import numpy as np
 from pathlib import Path
 
-#python misc/aggregate_backtraj.py ./4km --map-extent 35 5 65 30
+#python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
 
 
 # Add parent directory to path to import plume_backtraj

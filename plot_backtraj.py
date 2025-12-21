@@ -16,7 +16,7 @@ from plume_backtraj import (
     compute_height_edges,
 )
 
-#python plot_backtraj.py 4km/ash8_run/run_so2.pkl --map-extent 35 5 65 30
+#python plot_backtraj.py 4km/so2_run/run_so2.pkl --map-extent 30 5 65 30
 
 
 def parse_args():

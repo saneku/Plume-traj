@@ -71,7 +71,7 @@ python plume_backtraj.py \
  --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
  --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
  --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
- --map-extent 35 5 65 30
+ --map-extent 30 5 65 30
  #--seed-bbox 40. 10 40.1 10.1
 
 
@@ -105,7 +105,7 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
         --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
         --missed-trajectory-figure        "$outdir/missed_trajectories.png" \
         --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl" \
-        --map-extent 35 5 65 30
+        --map-extent 30 5 65 30
 done
 
  --aer-type can be 'sulf', 'ash1', … 'ash10'
