@@ -1,3 +1,4 @@
+import argparse
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
@@ -12,11 +13,14 @@ from netCDF4 import Dataset
 import matplotlib.colors as colors
 
 AVOGADRO = 6.02214076e23  # mol^-1
-MOLEC_PER_DU = 2.687e20   # molecules m^-2 in 1 DU
+MOLEC_PER_DOBSON_UNIT = 2.687e20   # molecules m^-2 in 1 Dobson unit
+
+#python clean_files.py /path/to/folder --field your_variable
+#python clean_files.py <folder> --field <var>
 
 class NetCDFViewer:
-    def __init__(self, folder_path):
-        
+    def __init__(self, folder_path, field_name=None):
+
         self.folder_path = folder_path
         self.nc_files = sorted(glob.glob(os.path.join(folder_path, "*.nc")))
 
@@ -29,23 +33,19 @@ class NetCDFViewer:
         # Initialize current file and indices
         self.current_file_idx = 0
         self.current_ds = None
-        # prefer new SO2 column name; fall back to older ones if needed
-        self.current_var_name = 'aerosol_index_354_388'
+        # Prefer provided field name; fall back to older ones if needed
+        self.current_var_name = field_name or 'aerosol_index_354_388'
 
         # Initialize eraser properties
         self.eraser_radius = 5
         self.eraser_active = False
         self.eraser_circle = None
         self.modified = False
-        # Threshold for plume contour (in DU)
-        self.threshold = 0.1
-        self.contour = None
-
         # Data / units
         self.data_native = None  # original units, 2D slice
         self.data_units = None
-        self.factor_to_du = 1.0
-        self.display_units = "DU"
+        self.display_scale = 1.0
+        self.display_units = None
 
         # Geographic coordinates
         self.lats = None
@@ -69,7 +69,6 @@ class NetCDFViewer:
         candidate_vars = [
             self.current_var_name,
             'sulfurdioxide_total_vertical_column_raw',
-            'ColumnAmountSO2',
             'aerosol_index_354_388',
             'sulfurdioxide_total_vertical_column_15km',
         ]
@@ -81,7 +80,7 @@ class NetCDFViewer:
         if var_name is None:
             self.current_ds.close()
             raise KeyError(
-                f"None of the expected SO2 column variables found in "
+                f"None of the expected variables found in "
                 f"{os.path.basename(file_path)}: {candidate_vars}"
             )
 
@@ -96,7 +95,7 @@ class NetCDFViewer:
 
         self.data_native = np.array(data_native, dtype=float)
         self.data_units = getattr(var, 'units', None)
-        self.factor_to_du, self.display_units = self._compute_to_du_factor(
+        self.display_scale, self.display_units = self._compute_display_scale(
             self.data_units
         )
 
@@ -127,36 +126,15 @@ class NetCDFViewer:
         self.cax = self.fig.add_axes([0.92, 0.2, 0.015, 0.6])
 
         # Add axes for widgets
-        self.threshold_slider_ax = self.fig.add_axes([0.1, 0.12, 0.8, 0.03])
-        self.file_slider_ax = self.fig.add_axes([0.1, 0.08, 0.8, 0.03])
-
         self.eraser_button_ax = self.fig.add_axes([0.1, 0.01, 0.15, 0.03])
         self.save_button_ax = self.fig.add_axes([0.3, 0.01, 0.15, 0.03])
         self.next_button_ax = self.fig.add_axes([0.5, 0.01, 0.15, 0.03])
         self.radius_slider_ax = self.fig.add_axes([0.75, 0.01, 0.2, 0.03])
 
-        # Create sliders
-        self.threshold_slider = Slider(
-            self.threshold_slider_ax,
-            'Threshold (DU)',
-            0.01,
-            10.0,
-            valinit=self.threshold,
-            valstep=0.01,
-        )
-        self.file_slider = Slider(
-            self.file_slider_ax,
-            'File',
-            0,
-            len(self.nc_files),
-            valinit=0,
-            valstep=1,
-        )
-
         # Create buttons
         self.eraser_button = Button(self.eraser_button_ax, 'Eraser: Off')
-        self.save_button = Button(self.save_button_ax, 'Save')
-        self.next_button = Button(self.next_button_ax, 'Next')
+        self.save_button = Button(self.save_button_ax, 'Save to file')
+        self.next_button = Button(self.next_button_ax, 'Next file')
 
         # Create eraser radius slider
         self.radius_slider = Slider(
@@ -169,8 +147,6 @@ class NetCDFViewer:
         )
 
         # Connect events
-        self.threshold_slider.on_changed(self.on_threshold_change)
-        self.file_slider.on_changed(self.on_file_change)
         self.eraser_button.on_clicked(self.toggle_eraser)
         self.save_button.on_clicked(self.save_data)
         self.next_button.on_clicked(self.next_file)
@@ -189,37 +165,37 @@ class NetCDFViewer:
         self.fig.suptitle(os.path.basename(self.nc_files[self.current_file_idx]), fontsize=12)
         plt.show()
 
-    def _compute_to_du_factor(self, units):
-        """Return multiplicative factor to convert from native units to DU."""
+    def _compute_display_scale(self, units):
+        """Return multiplicative factor to convert from native units to Dobson units."""
         if units is None:
-            return 1.0, "DU"
+            return 1.0, None
 
         u = units.lower().strip()
-        if "du" in u:
-            return 1.0, "DU"
+        if "dobson" in u:
+            return 1.0, "Dobson units"
 
-        # mol/m2 -> DU
+        # mol/m2 -> Dobson units
         if "mol" in u and ("m-2" in u or "m^-2" in u or "mol/m2" in u):
-            factor = AVOGADRO / MOLEC_PER_DU
-            return factor, "DU"
+            factor = AVOGADRO / MOLEC_PER_DOBSON_UNIT
+            return factor, "Dobson units"
 
-        # molecules/cm2 -> DU
+        # molecules/cm2 -> Dobson units
         if ("molec" in u or "molecule" in u) and ("cm-2" in u or "cm^-2" in u):
-            factor = 1.0e4 / MOLEC_PER_DU
-            return factor, "DU"
+            factor = 1.0e4 / MOLEC_PER_DOBSON_UNIT
+            return factor, "Dobson units"
 
         # Unknown: keep original units, no conversion
         return 1.0, units
 
     def get_current_slice(self):
-        """Slice in DU for display / thresholding."""
-        return self.data_native * self.factor_to_du
+        """Slice in display units for rendering."""
+        return self.data_native * self.display_scale
 
-    def set_current_slice(self, new_slice_du):
-        """Update native data from a DU slice."""
-        if self.factor_to_du == 0:
+    def set_current_slice(self, new_slice):
+        """Update native data from a rescaled slice."""
+        if self.display_scale == 0:
             return
-        self.data_native = np.array(new_slice_du, dtype=float) / self.factor_to_du
+        self.data_native = np.array(new_slice, dtype=float) / self.display_scale
     
     def _get_plot_extent_and_origin(self):
         """Calculate extent (edges) and determine origin based on lat/lon arrays."""
@@ -266,6 +242,11 @@ class NetCDFViewer:
 
             return [self.lons.min(), self.lons.max(), self.lats.min(), self.lats.max()], origin
 
+    def _colorbar_label(self):
+        if self.display_units:
+            return f"{self.current_var_name} [{self.display_units}]"
+        return self.current_var_name
+
     def update_plot(self, preserve_view=False):
         """Update the plot with current data"""
         # Get current slice
@@ -283,7 +264,7 @@ class NetCDFViewer:
             # Assuming origin is constant for the dataset files.
             
             if hasattr(self, 'colorbar') and self.colorbar is not None:
-                self.colorbar.set_label(f"SO2 [{self.display_units}]")
+                self.colorbar.set_label(self._colorbar_label())
         else:
             self.ax.clear()
             self.draw_map_features()
@@ -306,35 +287,11 @@ class NetCDFViewer:
                 extend='both',
                 format='%1.2f',
             )
-            self.colorbar.set_label(f"SO2 [{self.display_units}]")
+            self.colorbar.set_label(self._colorbar_label())
 
         # Set axes extent to match data
         if not preserve_view:
             self.ax.set_extent(extent, crs=ccrs.PlateCarree())
-
-        # Draw contour at threshold: outline of region >= threshold
-        if self.contour is not None:
-            try:
-                for c in self.contour.collections:
-                    c.remove()
-            except Exception as e:
-                pass
-            self.contour = None
-
-        try:
-            # Binary mask for plume (>= threshold)
-            masked = np.ma.masked_invalid(current_slice)
-            plume_mask = np.zeros_like(masked, dtype=float)
-            plume_mask[masked >= self.threshold] = 1.0
-
-            self.contour = self.ax.contour(
-                plume_mask,
-                levels=[0.5],
-                colors='blue',
-                linewidths=1.5,
-            )
-        except Exception:
-            self.contour = None
 
         # Update title with dimension information
         title = f"File {self.current_file_idx+1} out of {len(self.nc_files)}"
@@ -425,11 +382,6 @@ class NetCDFViewer:
         """Update eraser radius"""
         self.eraser_radius = int(val)
         # Visual update will happen in on_mouse_move
-
-    def on_threshold_change(self, val):
-        """Update plume threshold (for contour)"""
-        self.threshold = float(val)
-        self.update_plot(preserve_view=True)
 
     def toggle_eraser(self, event):
         """Toggle eraser tool on/off"""
@@ -544,41 +496,35 @@ class NetCDFViewer:
         self.modified = False
         self.fig.suptitle(os.path.basename(save_path), fontsize=12)
 
-    def on_file_change(self, val):
-        """Handle file slider change"""
-        new_idx = int(val)
-        if new_idx != self.current_file_idx:
-            # Ask to save if modified
-            if self.modified:
-                if self._ask_save():
-                    self.save_data(None)
-
-            self.current_file_idx = new_idx
-            self.load_current_file()
-            self.update_plot()
-
     def next_file(self, event):
         """Move to the next file, saving changes if needed"""
         # Save if modified
         if self.modified:
             self.save_data(None)
 
-        # Move to next file if available
-        if self.current_file_idx < len(self.nc_files):
+        # Move to next file if available, wrap to start otherwise
+        if self.current_file_idx < len(self.nc_files) - 1:
             self.current_file_idx += 1
-            self.file_slider.set_val(self.current_file_idx)
-            print (f"Updating the counter of files to {self.current_file_idx}")
         else:
-            #print("Reached the end of the file list. Starting again")
-            self.current_file_idx=0
+            self.current_file_idx = 0
+        print (f"Updating the counter of files to {self.current_file_idx}")
 
         self.load_current_file()
         self.update_plot()
 
 
 if __name__ == "__main__":
-    # Path to folder containing NetCDF files
-    folder_path = input("Enter path to folder containing NetCDF files: ")
+    parser = argparse.ArgumentParser(description="Interactive NetCDF field editor")
+    parser.add_argument(
+        "folder",
+        nargs="?",
+        help="Folder containing NetCDF files (prompts if omitted)",
+    )
+    parser.add_argument(
+        "--field",
+        help="Name of the NetCDF variable to view/edit (defaults to aerosol_index_354_388)",
+    )
+    args = parser.parse_args()
 
-    # Create and run the viewer
-    viewer = NetCDFViewer(folder_path)
+    folder_path = args.folder or input("Enter path to folder containing NetCDF files: ")
+    viewer = NetCDFViewer(folder_path, field_name=args.field)
