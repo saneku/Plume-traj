@@ -56,7 +56,7 @@ python plume_backtraj.py \
  --wrfout "$WRFOUT" \
  --start-time '2025-11-24T10:00:00' \
  --column "$COLUMN" --integration-dt 15\
- --so2-efolding-days 35 \
+ --efolding-days 35 \
  --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
  --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
@@ -2505,16 +2505,16 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--so2-efolding-days",
+        "--efolding-days",
         type=float,
         default=None,
-        help="e-folding time for SO2 mass decay in days. If set, mass is increased backwards in time.",
+        help="e-folding time for mass decay in days. If set, mass is increased backwards in time.",
     )
     return parser.parse_args()
 
 
 def main(args):
-    wrfout_path = args.wrfout
+    wrfout_paths = _expand_wrfout_paths(args.wrfout)
     column_file = args.column
     column_varname = args.column_var
 
@@ -2856,10 +2856,10 @@ def main(args):
         print("arrival_bin_minutes <= 0, skipping time–height series.")
         return
 
-    # --- SO2 mass correction for oxidation ---
-    if args.so2_efolding_days is not None and args.so2_efolding_days > 0:
-        print("[diag] Applying SO2 mass correction for oxidation...")
-        efolding_time_days = args.so2_efolding_days
+    # --- Mass correction using e-folding lifetime ---
+    if args.efolding_days is not None and args.efolding_days > 0:
+        print("[diag] Applying mass correction using e-folding lifetime...")
+        efolding_time_days = args.efolding_days
         efolding_time_sec = efolding_time_days * 86400.0
         original_mass_sum = arrival_mass.sum()
 
@@ -2875,7 +2875,7 @@ def main(args):
         arrival_mass = np.array(corrected_masses)
         corrected_mass_sum = arrival_mass.sum()
 
-        print(f"[diag] Applied SO2 mass correction with e-folding time of {efolding_time_days} days.")
+        print(f"[diag] Applied mass correction with e-folding time of {efolding_time_days} days.")
         print(f"[diag] Total mass changed from {original_mass_sum:.3e} to {corrected_mass_sum:.3e}.")
 
     # Vertical discretisation: use WRF vertical layers over receptor cell at start time

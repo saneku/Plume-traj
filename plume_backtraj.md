@@ -179,8 +179,8 @@ Full argument list:
 - `--emission-end` (optional, string)  
   UTC end time of the eruption/emission. When supplied together with `--emission-start`, the emission matrix uses fixed time bins spanning this window and discards arrivals outside it.
 
-- `--so2-efolding-days` (optional, float)
-  e-folding lifetime for SO₂ mass decay, in days. If set, parcel mass is increased backward in time to account for oxidation, affecting the mass-weighted emission matrix.
+- `--efolding-days` (optional, float)
+  e-folding lifetime for mass decay, in days. If set, parcel mass is increased backward in time to account for chemical decay, affecting the mass-weighted emission matrix.
 
 ---
 
@@ -347,7 +347,7 @@ python plume_backtraj.py \
   --arrival-bin-minutes 60 \
   --emission-start 2021-04-10T15:00:00 \
   --emission-end '2021-04-10T21:00:00' \
-  --so2-efolding-days 35 \
+  --efolding-days 35 \
   --output-txt emission_time_height.txt \
   --mass-output-txt emission_time_height_mass.txt \
   --mass-figure emission_time_height_mass.png

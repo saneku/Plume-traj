@@ -38,7 +38,7 @@ In atmospheric science, particularly in the study of volcanic eruptions, determi
 
 In modeling, volcanic emissions can be prescribed using time-dependent vertical profiles. A widely used approach to derive vertical emission profiles for volcanic plume prediction is to perform trial-and-error adjustments, comparing satellite-based total column observations of the plume with model simulations that assume different emission heights. Inverse modeling methods are considered a more efficient and versatile approach for obtaining optimal emissions than the trial-and-error method. 
 
-Here, we introduce an intermediate method implemented in the developed \texttt{Plume-Traj} tool for reconstructing volcanic emissions, using backward-in-time parcel trajectories and enabling the inference of time-dependent altitudes of volcanic material. The \texttt{Plume-Traj} can be used when the satellite measurement captures the enhanced values of SO$_2$, aerosol Index (AI), or Aerosol Optical Depth (AOD). Volcanic eruption monitoring relies on both source attribution (when and how high the material was injected) and also on forward dispersion (where the material travels after release). Therefore, we also offer a tool for the forward dispersion of volcanic material.
+Here, we introduce an intermediate method implemented in the developed \texttt{Plume-Traj} tool for reconstructing volcanic emissions, using backward-in-time parcel trajectories to infer time-dependent altitudes of volcanic material. The \texttt{Plume-Traj} can be used when the satellite measurement captures the enhanced values of SO$_2$, aerosol Index (AI), or Aerosol Optical Depth (AOD). Volcanic eruption monitoring relies on both source attribution (when and how high the material was injected) and also on forward dispersion (where the material travels after release). Therefore, we also offer a tool for the forward dispersion of volcanic material.
 
 
 \section{Methodology}
@@ -50,23 +50,18 @@ These two instruments require precomputed dimensional meteorological fields comp
 \end{itemize}
 Optional physics includes gravitational settling of ash and sulfate aerosols, and SO$_2$ mass correction with prescribed e-folding lifetime.
 
-
-
 \subsection{Input Data}
-Both workflows of the \texttt{Plume-Traj} require meteorological data: one or more WRF \texttt{wrfout} files containing grid geometry (\path{XLAT}, \path{XLONG}, \path{DX}, \path{DY}, map factors), winds (\path{U}, \path{V}, \path{W}), geopotential (\path{PH}, \path{PHB}), and \path{Times}. When multiple files are supplied, they are assumed to be ordered in time (or provided via a sortable wildcard).
-   
+Both workflows of the \texttt{Plume-Traj} require meteorological data: one or more WRF \texttt{wrfout} NetCDF files (\path{--wrfout}) containing grid geometry (\path{XLAT}, \path{XLONG}, \path{DX}, \path{DY}, map factors), winds (\path{U}, \path{V}, \path{W}), geopotential (\path{PH}, \path{PHB}), and \path{Times}. When multiple files are supplied, they are assumed to be ordered in time (or provided via a sortable wildcard).
 
 
 \subsection{Parcel Initialization for backward-in-time run}
-The backward-in-time simulation begins at a specified time (parameter \path{--start-time}) by defining the starting locations of the backward-in-time trajectories. This is achieved through a process called parcel seeding:
+The backward-in-time simulation begins at a specified time (parameter \path{--start-time}) by defining the starting locations of the backward-in-time trajectories. This process is called parcel seeding:
 \begin{itemize}
-    \item The location of the volcanic plume is defined by satellite-derived data, typically provided as a NetCDF file. This file contains a 2D field representing the total vertical column density of some substance (e.g., SO$_2$ column, AI, or AOD) on the same horizontal grid as the WRF data. A plume mask is created from the satellite column data (\texttt{--column-var}) (optionally scaled by \path{--column-coef})  by identifying all grid cells where the substance's concentration exceeds a user-defined threshold (\texttt{--threshold}). Within this masked area, a specified number (\texttt{--n-columns}) of horizontal locations is randomly chosen.
+    \item The location of the NetCDF file (\path{--column}) containing a 2D field representing the total vertical column density (or its equivalent) of some substance (e.g., SO$_2$ column, AI, or AOD) on the same horizontal grid as the WRF data (Sec. \ref{preproc}). A plume mask is created from the satellite column data (\texttt{--column-var}) (optionally scaled by \path{--column-coef})  by identifying all grid cells where the substance's concentration exceeds a user-defined threshold (\texttt{--threshold}). Within this masked area, a specified number (\texttt{--n-columns}) of horizontal locations is randomly chosen.
     \item At each of these locations, a vertical line of parcels (\texttt{--n-vert}) is initialized, distributed randomly between a minimum (\texttt{--z-min}) and maximum (\texttt{--z-max}) altitude. Parcels are placed in the corresponding WRF grid cell.
     \item Parcels can also be released from columns randomly sampled inside the defined region \path{--seed-bbox}.
 \end{itemize}
 %This process generates thousands of virtual air parcels that collectively represent the observed plume structure at the simulation's start time. 
-
-
 
 
 \subsection{Parcel Initialization for forward-in-time run}
@@ -120,7 +115,7 @@ vash\_{10} & 0.01955 & 1.95325 & 0.97 & 2500 \\ \hline
     \centering
     \includegraphics[width=0.8\linewidth]{./Fig1.png}
     \caption{Settling velocity as a function of altitude computed for ash
-    particles with different radii and for sulfate particles with dry volume median
+    particles with different radii, and for sulfate particles with the dry volume median
     radii = 0.62~$\mu$m. Comparison with theoretical data by
     \cite{kasten1968falling} and \cite{armienti1988numerical}.}
     \label{fig:grav_settl_velocities}
@@ -130,15 +125,16 @@ Figure \ref{fig:grav_settl_velocities} illustrates the settling velocities of as
 
 
 \subsection{Source Attribution}
-To identify the origin of the plume, a cylindrical "receptor" region is defined around the known coordinates of the source (\texttt{--receptor-lat}, \texttt{--receptor-lon}). This cylinder has a user-defined radius (\texttt{--receptor-radius}) and vertical extent (\texttt{--receptor-min-h}, \texttt{--receptor-max-h}). During the backward integration, the script continuously checks if a parcel has entered this receptor cylinder. If a parcel's trajectory intersects the cylinder, it is considered to have "arrived" at the receptor.  Parcel arrivals are binned on a time-height grid with \path{--arrival-bin-minutes}. If both \path{--emission-start} and \path{--emission-end} are supplied, fixed time bins spanning the emission window are used and arrivals outside the window are ignored. The simulation stops for a parcel if it leaves the model domain or reaches the beginning of the emission window (\texttt{--emission-start}).
+To identify the origin of the plume, a cylindrical "receptor" region is defined around the known coordinates of the source (\texttt{--receptor-lat}, \texttt{--receptor-lon}). This cylinder has a user-defined radius (\texttt{--receptor-radius}) and vertical extent (\texttt{--receptor-min-h}, \texttt{--receptor-max-h}). During the backward integration, the script continuously checks if a parcel has entered this receptor cylinder. If a parcel's trajectory intersects the cylinder, it is considered to have "arrived" at the receptor. \path{--parcel-radius} (optional, default is 0) sets parcel radius (m) used in receptor-contact checks; a parcel is counted as arrived when the circle touches the receptor cylinder. Parcel arrivals are binned on a time-height grid with \path{--arrival-bin-minutes}. If both \path{--emission-start} and \path{--emission-end} are supplied, fixed time bins spanning the emission window are used, and arrivals outside the window are ignored. The simulation stops for a parcel if it leaves the model domain or reaches the beginning of the emission window (\texttt{--emission-start}).
 \\
-Mass-weighted outputs use the column value multiplied by cell area and divided by \path{--n-vert}. If \path{--so2-efolding-days} is set, parcel masses are adjusted backward in time using an exponential correction to compensate for SO$_2$ oxidation (or radioactive decay, for example).
+Mass-weighted outputs use the column value multiplied by cell area and divided by \path{--n-vert}. If \path{--efolding-days} is set, parcel masses are adjusted backward in time using an exponential correction to compensate for SO$_2$ oxidation (or radioactive decay, for example).
 
 
 \section{Output}
-All input parameters and output results can be serialized and stored in a pickle file using \path{--state-pickle}. The file includes grid data, trajectories, emission matrices, and metadata, allowing plots to be reproduced without re-running the solver. \texttt{plot\_backtraj.py} and \texttt{plot\_forwtraj.py} regenerate the same plots from a saved \path{--state-pickle} file. The aggregation scripts in \texttt{misc/aggregate\_backtraj.py} and \texttt{misc/aggregate\_forwtraj.py} combine multiple pickles and output the aggregated plots, for example, for \texttt{vash\_1}\ - \texttt{vash\_{10}} parcels. All plotting commands accept \path{--map-extent} to override map bounds when needed and may also include a vertical seed distribution plot (\path{--seeds-vertical-figure}). \\
+All input parameters and output results can be serialized and stored in a pickle file using \path{--state-pickle}. The file includes grid data, trajectories, emission matrices, and metadata, allowing plots to be reproduced without re-running the solver. \texttt{plot\_backtraj.py} and \texttt{plot\_forwtraj.py} regenerate the same plots from a saved \path{--state-pickle} file. The aggregation scripts in \texttt{misc/aggregate\_backtraj.py} and \texttt{misc/aggregate\_forwtraj.py} combine multiple pickles and output the aggregated plots, for example, for \texttt{vash\_1}\ - \texttt{vash\_{10}} parcels. All plotting commands accept \path{--map-extent} to override map bounds when needed and may also include a vertical seed distribution plot (\path{--seeds-vertical-figure}). 
+\path{--figure-dpi}: DPI used for all saved figures (default: 200).\\
 
-For demonstration purposes the tool was deployed in both modes for the Hayli Gubbi eruption on 23 November 2025. We the backward in time run we use observations of $_2$ and the aerosol index from TROPOMI on 24 November at 11:00 UTC. These examples are implemented in the code \url{https://github.com/saneku/Plume-traj} by default.
+For demonstration purposes, the tool was deployed in both modes for the Hayli Gubbi eruption on 23 November 2025. We run backward in time using SO$_2$ and aerosol index observations from TROPOMI on 24 November at 11:00 UTC. These examples are implemented in the code \url{https://github.com/saneku/Plume-traj} by default.
 
 \subsection{Output from the backward in time run}
 The script \texttt{plume\_backtraj.py} generates a series of quantitative and visual outputs, see Fig. \ref{fig:fig2}.
@@ -147,7 +143,12 @@ The script \texttt{plume\_backtraj.py} generates a series of quantitative and vi
 \begin{itemize}
     \item Emission Time-Height Matrix (\texttt{--output-txt}, \texttt{--output-figure}): The primary output is a 2D histogram that bins the "arrived" parcels by their arrival time and altitude. This matrix, saved as both a text file and a plot, represents the estimated emission profile from the source, showing the most likely periods and altitudes of significant emissions.
 
+    \item \path{--mass-figure}: Optional PNG figure for the mass-weighted time-height emission matrix (same time binning as \path{--output-figure}).
+
     \item Trajectory Plots (\texttt{--trajectory-figure}): A map showing the horizontal paths of all parcels that successfully reached the receptor. Trajectories are colored by an attribute, such as their initial altitude, providing a visual link between the observed plume and the source.
+
+    \item \path{--trajectory-emission-time-figure}: Optional trajectory map coloured by emission time (hours since the emission reference time; typically \path{--emission-start} when provided).
+
 
     \item Diagnostic Plots: Several other figures are generated for detailed analysis:
     \begin{itemize}
@@ -155,6 +156,7 @@ The script \texttt{plume\_backtraj.py} generates a series of quantitative and vi
         \item \texttt{--missed-trajectory-figure}: A map showing the trajectories of parcels that did \emph{not} reach the receptor, which can be useful for diagnosing the influence of the wind field.
         \item \texttt{--trajectory-age}: A plot of trajectories colored by the time taken to travel from the plume to the source.
         \item \texttt{--trajectory-arrival-height-figure}: Trajectories colored by the height at which they arrived at the receptor.
+        \item \path{--hourly-figures}: Flag to save hourly parcel-location snapshots during the backward integration (e.g., \texttt{parcel\_positions\_hour\_XXX.png}).
     \end{itemize}    
 \end{itemize}
 
@@ -169,18 +171,18 @@ The script \texttt{plume\_backtraj.py} generates a series of quantitative and vi
 \clearpage
 
 \subsection{Output from the forward in time run}
-The script \texttt{plume\_forwtraj.py} is for forward runs and writes height-colored and age-colored trajectory maps (\path{--height-figure}, \path{--age-figure}), see Fig. \ref{fig:fig3}.
+The script \texttt{plume\_forwtraj.py} is for forward runs and produces height- and age-colored trajectory maps (\path{--height-figure}, \path{--age-figure}), as shown in Fig. \ref{fig:fig3}.
 
 \begin{figure}[h!]
     \centering
     \includegraphics[width=0.90\linewidth]{Fig3.png}
-    \caption{Aggregated forward trajectories for ash (vash\_6...vash\_{10}) colored by age (time since the release) (left) and height (right). Computed by forward in time mode using the \textit{Plume-traj} tool (\url{https://github.com/saneku/Plume-traj}.}
+    \caption{Aggregated forward trajectories for ash (vash\_6, ..., vash\_{10}) colored by age (time since the release) (left) and height (right). Computed by forward in time mode using the \textit{Plume-traj} tool (\url{https://github.com/saneku/Plume-traj}.}
     \label{fig:fig3}
 \end{figure}
 
 
 \section{Coupling to \textit{PrepEmisSources}}
-The emission matrices obtaned in backward in time mode provide a direct bridge to the emission scenarios used by \textit{PrepEmisSources} \citep{ukhov_2025_16856541}. This links observed plume retrievals to physically consistent emission scenarios that can be injected into WRF-Chem via \textit{PrepEmisSources}. A typical coupling workflow is:
+The emission matrices obtained in backward in time mode provide a direct bridge to the emission scenarios used by \textit{PrepEmisSources} \citep{ukhov_2025_16856541}. This links observed plume retrievals to physically consistent emission scenarios that can be injected into WRF-Chem via \textit{PrepEmisSources}. A typical coupling workflow is:
 \begin{enumerate}
 \item Run \texttt{Plume-Traj} with \path{--emission-start} and \path{--emission-end} aligned to the WRF-Chem simulation window.
 \item Use the computed mass-weighted matrix (\path{--mass-output-txt}) (see Fig. \ref{fig:Fig4}) as the time-height distribution of emitted mass; 
@@ -201,6 +203,18 @@ The emission matrices obtaned in backward in time mode provide a direct bridge t
     \caption{Normalised by erupted mass emission scenarios obtained for ash (left) and  SO$_2$ (right). Plots are constructed using the \textit{PrepEmisSources} utility \cite{ukhov_2025_16856541} }
     \label{fig:Fig5}
 \end{figure}
+
+
+\section{Pre-processing utilities}\label{preproc}
+
+  \begin{itemize}
+    \item \path{misc/regrid_wrf.py}: Regrids one or more variables from a source NetCDF grid onto a destination WRF grid using
+  lat/lon coordinates and \texttt{scipy.interpolate.griddata}. CLI: \path{--source-file}, \path{--dest-file-grid},
+  \path{--output-file}, \path{--variables}, \path{--time-index}.
+    \item \path{misc/netcdf_clean_brush.py}: Interactive NetCDF field editor for manual cleaning of 2D products (e.g., SO$_2$
+  column/aerosol index) with a brush/eraser tool. Runs on a folder of \texttt{.nc} files (positional \path{folder}) and
+  selects the variable via \path{--field}; saves edits back into the current NetCDF file.
+  \end{itemize}
 
 
 \bibliographystyle{plainnat}
