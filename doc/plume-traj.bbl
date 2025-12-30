@@ -1,0 +1,50 @@
+\begin{thebibliography}{6}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Armienti et~al.(1988)Armienti, Macedonio, and
+  Pareschi]{armienti1988numerical}
+Pietro Armienti, G~Macedonio, and MT~Pareschi.
+\newblock A numerical model for simulation of tephra transport and deposition:
+  Applications to may 18, 1980, mount st. helens eruption.
+\newblock \emph{Journal of Geophysical Research: Solid Earth}, 93\penalty0
+  (B6):\penalty0 6463--6476, 1988.
+
+\bibitem[Grell et~al.(2005)Grell, Peckham, Schmitz, McKeen, Frost, Skamarock,
+  and Eder]{grell2005fully}
+Georg~A Grell, Steven~E Peckham, Rainer Schmitz, Stuart~A McKeen, Gregory
+  Frost, William~C Skamarock, and Brian Eder.
+\newblock Fully coupled “online” chemistry within the wrf model.
+\newblock \emph{Atmospheric Environment}, 39\penalty0 (37):\penalty0
+  6957--6975, 2005.
+
+\bibitem[Kasten(1968)]{kasten1968falling}
+Fritz Kasten.
+\newblock Falling speed of aerosol particles.
+\newblock \emph{Journal of Applied Meteorology (1962-1982)}, 7\penalty0
+  (5):\penalty0 944--947, 1968.
+
+\bibitem[Skamarock et~al.(2005)Skamarock, Klemp, Dudhia, Gill, Barker, Wang,
+  and Powers]{skamarock2005description}
+William~C Skamarock, Joseph~B Klemp, Jimy Dudhia, David~O Gill, Dale~M Barker,
+  Wei Wang, and Jordan~G Powers.
+\newblock A description of the advanced research wrf version 2.
+\newblock Technical report, National Center for Atmospheric Research, 2005.
+
+\bibitem[Ukhov and Hoteit(2025)]{ukhov_2025_16856541}
+Alexander Ukhov and Ibrahim Hoteit.
+\newblock Prepemissources: a framework for preparing volcanic emissions, 2025.
+\newblock URL \url{https://doi.org/10.5281/zenodo.16856541}.
+
+\bibitem[Ukhov et~al.(2025)Ukhov, Stenchikov, Schnell, Ahmadov, Rizza, Grell,
+  and Hoteit]{ukhov2025enhancing}
+Alexander Ukhov, Georgiy Stenchikov, Jordan Schnell, Ravan Ahmadov, Umberto
+  Rizza, Georg Grell, and Ibrahim Hoteit.
+\newblock Enhancing volcanic eruption simulations with the wrf-chem v4. 8.
+\newblock \emph{Geoscientific Model Development}, 18\penalty0 (23):\penalty0
+  9805--9825, 2025.
+
+\end{thebibliography}
