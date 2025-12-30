@@ -3,6 +3,7 @@ import argparse
 import warnings
 from pathlib import Path
 import pickle
+from glob import glob
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*`np\.bool` is a deprecated alias.*")
 
 import matplotlib
@@ -32,6 +33,106 @@ def _format_time_str(val):
 def _diag(msg: str) -> None:
     """Lightweight diagnostic logger."""
     print(f"[diag] {msg}")
+
+
+def _expand_wrfout_paths(wrfout_args):
+    expanded = []
+    for entry in wrfout_args:
+        if any(ch in entry for ch in ["*", "?", "["]):
+            matches = sorted(glob(entry))
+            expanded.extend(matches)
+        else:
+            expanded.append(entry)
+    expanded = [path for path in expanded if path]
+    if not expanded:
+        raise ValueError("No WRF output files matched the provided pattern(s).")
+    return expanded
+
+
+def _combine_wrf_outputs(wrfout_paths):
+    if len(wrfout_paths) == 1:
+        return read_wrf_geometry_and_winds(wrfout_paths[0])
+
+    grids = []
+    for path in wrfout_paths:
+        grids.append(read_wrf_geometry_and_winds(path))
+
+    base = grids[0]
+    xlat = base["xlat"]
+    xlon = base["xlon"]
+    dx_m = base["dx_m"]
+    dy_m = base["dy_m"]
+    area = base["area"]
+
+    u_list = []
+    v_list = []
+    w_list = []
+    z_list = []
+    dz_list = []
+    time_list = []
+
+    for idx, grid in enumerate(grids):
+        if grid["xlat"].shape != xlat.shape or grid["xlon"].shape != xlon.shape:
+            raise ValueError(f"WRF grid shape mismatch in file {wrfout_paths[idx]}.")
+        if not np.allclose(grid["xlat"], xlat, equal_nan=True):
+            raise ValueError(f"WRF XLAT mismatch in file {wrfout_paths[idx]}.")
+        if not np.allclose(grid["xlon"], xlon, equal_nan=True):
+            raise ValueError(f"WRF XLONG mismatch in file {wrfout_paths[idx]}.")
+
+        u_list.append(grid["u"])
+        v_list.append(grid["v"])
+        w_list.append(grid["w"])
+        z_list.append(grid["z_center"])
+        dz_list.append(grid["dz"])
+        time_list.append(grid["times"])
+
+    u = np.concatenate(u_list, axis=0)
+    v = np.concatenate(v_list, axis=0)
+    w = np.concatenate(w_list, axis=0)
+    z_center = np.concatenate(z_list, axis=0)
+    dz = np.concatenate(dz_list, axis=0)
+    times = np.concatenate(time_list, axis=0)
+
+    if times.dtype.kind == "M":
+        sort_order = np.argsort(times)
+        if not np.all(sort_order == np.arange(sort_order.size)):
+            _diag("Sorting concatenated WRF outputs by time.")
+            u = u[sort_order]
+            v = v[sort_order]
+            w = w[sort_order]
+            z_center = z_center[sort_order]
+            dz = dz[sort_order]
+            times = times[sort_order]
+
+        diffs = np.diff(times.astype("datetime64[s]"))
+        if np.any(diffs == np.timedelta64(0, "s")):
+            _diag("Duplicate WRF times found; keeping the last occurrence per timestamp.")
+            keep = np.ones(times.size, dtype=bool)
+            keep[:-1] = times[:-1] != times[1:]
+            u = u[keep]
+            v = v[keep]
+            w = w[keep]
+            z_center = z_center[keep]
+            dz = dz[keep]
+            times = times[keep]
+
+        diffs = np.diff(times.astype("datetime64[s]"))
+        if np.any(diffs <= np.timedelta64(0, "s")):
+            _diag("WRF times are not strictly increasing after combine; check inputs.")
+
+    return dict(
+        xlat=xlat,
+        xlon=xlon,
+        dx_m=dx_m,
+        dy_m=dy_m,
+        area=area,
+        u=u,
+        v=v,
+        w=w,
+        z_center=z_center,
+        dz=dz,
+        times=times,
+    )
 
 
 PARCEL_MARKER_SIZE = 3.0
@@ -2278,8 +2379,9 @@ def parse_args():
     )
     parser.add_argument(
         "--wrfout",
+        nargs="+",
         required=True,
-        help="Path to WRF output file containing winds and geometry.",
+        help="One or more WRF output files (ordered in time). Wildcards are supported.",
     )
     parser.add_argument(
         "--column",
@@ -2544,7 +2646,7 @@ def main(args):
         _diag(f"Settling velocities (m/s): {settling_profile['velocity_ms']}")
     figure_dpi = max(50, int(args.figure_dpi))
 
-    grid = read_wrf_geometry_and_winds(wrfout_path)
+    grid = _combine_wrf_outputs(wrfout_paths)
     xlat = grid["xlat"]
     xlon = grid["xlon"]
     area = grid["area"]

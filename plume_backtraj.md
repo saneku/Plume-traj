@@ -34,7 +34,7 @@ pip install numpy netCDF4 scipy
 
 ### 2.1 WRF output (`--wrfout`)
 
-A WRF NetCDF file with at least:
+One or more WRF NetCDF files (ordered in time) with at least:
 
 - `XLAT`, `XLONG` (2‑D lat/lon)
 - `MAPFAC_MX`, `MAPFAC_MY`, `DX`, `DY` (for physical grid spacing)
@@ -42,7 +42,7 @@ A WRF NetCDF file with at least:
 - `PH`, `PHB` (for geometric height)
 - `Times` (WRF time stamps)
 
-The script destaggers winds, computes cell-center heights and layer thickness (`z_center`, `dz`), and extracts the time axis.
+The script destaggers winds, computes cell-center heights and layer thickness (`z_center`, `dz`), and extracts the time axis. When multiple WRF files are provided, their time axes are concatenated (and the combined series is sorted by time).
 
 ### 2.2 SO₂ column file (`--column`)
 
@@ -67,8 +67,8 @@ python plume_backtraj.py --wrfout WRFOUT.nc --column SO2_COLUMN.nc --receptor-la
 
 Full argument list:
 
-- `--wrfout` (required)  
-  Path to WRF output file containing winds and geometry.
+- `--wrfout` (required, one or more)  
+  One or more WRF output files (ordered in time). Wildcards are supported.
 
 - `--column` (required)  
   NetCDF file containing SO₂ column on the same WRF grid.
@@ -263,7 +263,7 @@ In `main()`:
    - a **count** of `1`, and
    - a **mass weight** inherited from its source column cell (`column value × cell area / n_vert`).
 4. Mass correction (optional):
-   - If `--so2-efolding-days` is set, the mass of each parcel is increased backward in time based on its age to account for chemical decay.
+   - If `--efolding-days` is set, the mass of each parcel is increased backward in time based on its age to account for chemical decay.
    - `mass_corrected = mass_at_receptor * exp(age_seconds / e-folding_seconds)`
 
 5. Time discretisation:
