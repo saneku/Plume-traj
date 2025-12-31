@@ -4,7 +4,7 @@ This script samples a satellite-retrieved SO₂ column on a WRF grid, launches L
 
 Each seeded parcel carries a weight that represents a fraction of the sampled column load (`column2d * cell_area / n_vert`), so the back-trajectory analysis produces both simple parcel counts *and* mass-weighted totals. Both diagnostics can be written to TXT time–height matrices and plotted as PNG heatmaps in a format similar to `PrepEmisSources`’ `emission_scenario.py`.
 
-![Fig2: Backward-trajectory reconstruction (Plume-traj). Ash (left) and SO2 (right) show seeds, time-colored trajectories, and arrival heights; black contours show threshold 0.1; red triangle marks Hayli Gubbi volcano.](Fig2.png)
+![Backward-trajectory reconstruction (Plume-traj). Ash (left) and SO2 (right) show seeds, time-colored trajectories, and arrival heights; black contours show threshold 0.1; red triangle marks Hayli Gubbi volcano.](./doc/Fig2.png)
 
 ---
 

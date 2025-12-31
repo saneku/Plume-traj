@@ -7,7 +7,7 @@ This script releases a vertical column of parcels from one or more WRF grid cell
 
 It also supports saving a state pickle for later re-plotting with `plot_forwtraj.py`.
 
-![Fig3: Aggregated forward trajectories for ash (vash_6-vash_10), colored by age (left) and height (right).](Fig3.png)
+![Aggregated forward trajectories for ash (vash_6-vash_10), colored by age (left) and height (right).](./doc/Fig3.png)
 
 ---
 
