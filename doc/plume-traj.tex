@@ -40,6 +40,7 @@ In modeling, volcanic emissions can be prescribed using time-dependent vertical 
 
 Here, we introduce an intermediate method implemented in the developed \texttt{Plume-Traj} tool for reconstructing volcanic emissions, using backward-in-time parcel trajectories to infer time-dependent altitudes of volcanic material. The \texttt{Plume-Traj} can be used when the satellite measurement captures the enhanced values of SO$_2$, aerosol Index (AI), or Aerosol Optical Depth (AOD). Volcanic eruption monitoring relies on both source attribution (when and how high the material was injected) and also on forward dispersion (where the material travels after release). Therefore, we also offer a tool for the forward dispersion of volcanic material.
 
+This framework is not limited to volcanic plumes; it is applicable to any tracer or emission field represented in WRF‑Chem (e.g., anthropogenic, biomass‑burning, dust, or other chemistry/aerosol sources).
 
 \section{Methodology}
 These two instruments require precomputed dimensional meteorological fields computed using the Weather Research and Forecasting (WRF-Chem) model \citep{skamarock2005description,grell2005fully}, which has been recently corrected and updated in terms of simulating the volcanic eruptions \citep{ukhov2025enhancing}
@@ -58,10 +59,9 @@ Both workflows of the \texttt{Plume-Traj} require meteorological data: one or mo
 The backward-in-time simulation begins at a specified time (parameter \path{--start-time}) by defining the starting locations of the backward-in-time trajectories. This process is called parcel seeding:
 \begin{itemize}
     \item The location of the NetCDF file (\path{--column}) containing a 2D field representing the total vertical column density (or its equivalent) of some substance (e.g., SO$_2$ column, AI, or AOD) on the same horizontal grid as the WRF data (Sec. \ref{preproc}). A plume mask is created from the satellite column data (\texttt{--column-var}) (optionally scaled by \path{--column-coef})  by identifying all grid cells where the substance's concentration exceeds a user-defined threshold (\texttt{--threshold}). Within this masked area, a specified number (\texttt{--n-columns}) of horizontal locations is randomly chosen.
-    \item At each of these locations, a vertical line of parcels (\texttt{--n-vert}) is initialized, distributed randomly between a minimum (\texttt{--z-min}) and maximum (\texttt{--z-max}) altitude. Parcels are placed in the corresponding WRF grid cell.
+    \item At each of these locations, a vertical line of parcels (\texttt{--n-vert}) is initialized, distributed randomly between a minimum (\texttt{--z-min}) and maximum (\texttt{--z-max}) altitude. Parcels are placed in the corresponding WRF grid cell. Increasing the total number of parcels (via larger \path{--n-columns} and/or \path{--n-vert}) generally reduces sampling noise and yields more stable, converged results, at the cost of longer runtimes.
     \item Parcels can also be released from columns randomly sampled inside the defined region \path{--seed-bbox}.
 \end{itemize}
-Increasing the total number of parcels (via larger \path{--n-columns} and/or \path{--n-vert}) generally reduces sampling noise and yields more stable, converged results, at the cost of longer runtimes.
 %This process generates thousands of virtual air parcels that collectively represent the observed plume structure at the simulation's start time. 
 
 
