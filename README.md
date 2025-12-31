@@ -10,6 +10,7 @@ This repository provides two related scripts for Lagrangian parcel tracking usin
 
 - Back-trajectory guide: `plume_backtraj.md`
 - Forward-trajectory guide: `plume_forwtraj.md`
+- Paper style pdf: `doc/plume-traj.pdf`
 
 ## Plotting Helpers
 
