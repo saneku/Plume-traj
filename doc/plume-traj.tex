@@ -51,7 +51,7 @@ These two instruments require precomputed dimensional meteorological fields comp
 Optional physics includes gravitational settling of ash and sulfate aerosols, and SO$_2$ mass correction with prescribed e-folding lifetime.
 
 \subsection{Input Data}
-Both workflows of the \texttt{Plume-Traj} require meteorological data: one or more WRF \texttt{wrfout} NetCDF files (\path{--wrfout}) containing grid geometry (\path{XLAT}, \path{XLONG}, \path{DX}, \path{DY}, map factors), winds (\path{U}, \path{V}, \path{W}), geopotential (\path{PH}, \path{PHB}), and \path{Times}. When multiple files are supplied, they are assumed to be ordered in time (or provided via a sortable wildcard).
+Both workflows of the \texttt{Plume-Traj} require meteorological data: one or more WRF wrfout NetCDF files (\path{--wrfout}) containing grid geometry (\path{XLAT}, \path{XLONG}, \path{DX}, \path{DY}, map factors), winds (\path{U}, \path{V}, \path{W}), geopotential (\path{PH}, \path{PHB}), and \path{Times}. When multiple files are supplied, they are assumed to be ordered in time (or provided via a sortable wildcard).
 
 
 \subsection{Parcel Initialization for backward-in-time run}
@@ -61,6 +61,7 @@ The backward-in-time simulation begins at a specified time (parameter \path{--st
     \item At each of these locations, a vertical line of parcels (\texttt{--n-vert}) is initialized, distributed randomly between a minimum (\texttt{--z-min}) and maximum (\texttt{--z-max}) altitude. Parcels are placed in the corresponding WRF grid cell.
     \item Parcels can also be released from columns randomly sampled inside the defined region \path{--seed-bbox}.
 \end{itemize}
+Increasing the total number of parcels (via larger \path{--n-columns} and/or \path{--n-vert}) generally reduces sampling noise and yields more stable, converged results, at the cost of longer runtimes.
 %This process generates thousands of virtual air parcels that collectively represent the observed plume structure at the simulation's start time. 
 
 
@@ -113,15 +114,15 @@ vash\_{10} & 0.01955 & 1.95325 & 0.97 & 2500 \\ \hline
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.8\linewidth]{./Fig1.png}
+    \includegraphics[width=0.6\linewidth]{./Fig1.png}
     \caption{Settling velocity as a function of altitude computed for ash
     particles with different radii, and for sulfate particles with the dry volume median
-    radii = 0.62~$\mu$m. Comparison with theoretical data by
+    radii = 0.62 $\mu$m. Comparison with theoretical data by
     \cite{kasten1968falling} and \cite{armienti1988numerical}.}
     \label{fig:grav_settl_velocities}
 \end{figure}
 
-Figure \ref{fig:grav_settl_velocities} illustrates the settling velocities of ash particles as a function of altitude for multiple particle radii. The gravitational settling velocity of sulfate particles having dry volume median radii = 0.62~$\mu$m is also shown. We compare our results with theoretical formulations by \cite{kasten1968falling} and \cite{armienti1988numerical}. In \cite{kasten1968falling}, settling velocities are for spherical particles with radii of 1~$\mu$m, 3~$\mu$m, and 10~$\mu$m; for comparison, the density of these particles was adjusted to align with that of ash. In \cite{armienti1988numerical}, ranges of terminal velocities are provided for feldspar mineral particles (radii of 23.5~$\mu$m, 46.75~$\mu$m, 93.75~$\mu$m, and 187.5~$\mu$m), which are regarded as having the closest density to ash particles.
+Figure \ref{fig:grav_settl_velocities} illustrates the settling velocities of ash particles as a function of altitude for multiple particle radii. The gravitational settling velocity of sulfate particles having dry volume median radii = 0.62 $\mu$m is also shown. We compare our results with theoretical formulations by \cite{kasten1968falling} and \cite{armienti1988numerical}. In \cite{kasten1968falling}, settling velocities are for spherical particles with radii of 1 $\mu$m, 3 $\mu$m, and 10 $\mu$m; for comparison, the density of these particles was adjusted to align with that of ash. In \cite{armienti1988numerical}, ranges of terminal velocities are provided for feldspar mineral particles (radii of 23.5 $\mu$m, 46.75 $\mu$m, 93.75 $\mu$m, and 187.5 $\mu$m), which are regarded as having the closest density to ash particles.
 
 
 \subsection{Source Attribution}

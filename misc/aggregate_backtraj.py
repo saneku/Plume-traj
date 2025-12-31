@@ -6,8 +6,12 @@ import sys
 import numpy as np
 from pathlib import Path
 
-#python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
+'''Aggregate and plot trajectories from multiple back-trajectory run directories.
+Example usage:
 
+python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
+
+'''
 
 # Add parent directory to path to import plume_backtraj
 sys.path.append(str(Path(__file__).resolve().parent.parent))

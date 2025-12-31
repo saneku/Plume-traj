@@ -12,12 +12,17 @@ from plume_backtraj import (
     plot_parcel_emission_time_map,
     plot_missed_parcel_trajectories,
     plot_emission_matrix,
+    plot_seed_vertical_distribution,
     _format_time_str, # Import the helper function
     compute_height_edges,
 )
 
-#python plot_backtraj.py 4km/so2_run/run_so2.pkl --map-extent 30 5 65 30
+''' 
+Example usage:
 
+python plot_backtraj.py so2_run/run_so2.pkl --map-extent 30 5 65 30 
+
+'''
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Re-plot trajectories from a saved state pickle file.")
@@ -111,6 +116,14 @@ def main():
             ),
             figure_dpi=dpi,
             map_extent=map_extent,
+        )
+        plot_seed_vertical_distribution(
+            parcels=state["initial_parcels"],
+            out_path="parcel_vertical_distribution_replot.png",
+            z_min=script_args.get("z_min"),
+            z_max=script_args.get("z_max"),
+            figure_dpi=dpi,
+            x_coords=state["initial_parcels"].get("i"),
         )
 
     plot_parcel_age_map(

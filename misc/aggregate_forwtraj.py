@@ -10,14 +10,14 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 '''Aggregate and plot trajectories from multiple forward run pickles.
 
-Usage:
+Example usage:
 
 python misc/aggregate_forwtraj.py \
   --pattern "./forward_run_*.pkl" \
   --height-figure plume_height_colored_aggregate.png \
   --age-figure plume_age_colored_aggregate.png \
   --seeds-vertical-figure seeds_vertical_aggregate.png \
-  --map-extent 35 5 65 30
+  --map-extent 30 5 65 30
 '''
 
 

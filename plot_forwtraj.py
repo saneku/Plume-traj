@@ -3,11 +3,13 @@ import pickle
 import numpy as np
 
 '''
+Example usage:
+
 python plot_forwtraj.py forward_run.pkl \
   --height-figure my_height.png \
   --age-figure my_age.png \
   --seeds-vertical-figure seeds_vertical.png \
-  --map-extent 35 5 65 30
+  --map-extent 30 5 65 30 
 '''
 
 from plume_forwtraj import (

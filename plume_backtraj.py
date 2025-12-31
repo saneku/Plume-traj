@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import argparse
 import warnings
 from pathlib import Path
@@ -17,9 +16,87 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from netCDF4 import Dataset
 from scipy.interpolate import RegularGridInterpolator
-#from datetime import datetime
 
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
+
+
+'''
+Example usage:
+
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
+COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
+COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
+
+#SO2
+
+outdir="./so2_run"
+mkdir -p "$outdir"
+python plume_backtraj.py \
+ --wrfout "$WRFOUT" \
+ --start-time '2025-11-24T11:00:00' \
+ --column "$COLUMN" --integration-dt 15\
+ --efolding-days 35 \
+ --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
+ --n-columns 1000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
+ --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
+ --receptor-lat 13.51 --receptor-lon 40.71 \
+ --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
+ --arrival-bin-minutes 30 \
+ --output-txt "$outdir/so2_emission_time_height.txt" --output-figure "$outdir/so2_emission_time_height.png" \
+ --trajectory-figure "$outdir/so2_trajectories.png" --trajectory-age "$outdir/so2_trajectory_ages.png"  \
+ --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
+ --seeds-figure "$outdir/parcel_initial_locations.png" \
+ --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
+ --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
+ --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
+ --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
+ --map-extent 30 5 65 30 \
+ --hourly-figures \
+ --seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png" \
+ #--seed-bbox 40. 10 40.1 10.1
+
+
+#Aerosols
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
+COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc'
+COLUMN_VAR='aerosol_index_354_388'
+
+for aer in sulf ash10 ash9 ash8 ash7 ash6; do
+    outdir="./${aer}_run"
+    mkdir -p "$outdir"
+    echo " "
+    python plume_backtraj.py \
+        --wrfout "$WRFOUT" \
+        --aer-type "$aer" \
+        --start-time '2025-11-24T10:00:00' \
+        --column "$COLUMN" --integration-dt 15 \
+        --column-var "$COLUMN_VAR" --column-coef 1 --threshold 0.10 --colorbar-label 'Aerosol Index' \
+        --n-columns 50 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
+        --emission-start '2025-11-23T08:30:00' --emission-end   '2025-11-24T10:00:00' \
+        --receptor-lat 13.51 --receptor-lon 40.71 \
+        --receptor-radius 10000 --receptor-min-h 1000 --receptor-max-h 30000 \
+        --arrival-bin-minutes 30 \
+        --output-txt              "$outdir/emission_time_height.txt" \
+        --output-figure           "$outdir/emission_time_height.png" \
+        --trajectory-figure       "$outdir/trajectories.png" \
+        --trajectory-age          "$outdir/trajectory_ages.png" \
+        --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
+        --seeds-figure "$outdir/parcel_initial_locations.png" \
+        --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
+        --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
+        --missed-trajectory-figure        "$outdir/missed_trajectories.png" \
+        --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl" \
+        --map-extent 30 5 65 30
+done
+
+ --aer-type can be 'sulf', 'ash1', … 'ash10'
+ --seed-bbox 37 9 43 11
+
+# --hourly-figures
+#--seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png" \
+
+1 mol/m² ≈ 6.022e23 / 2.687e20 ≈ 2243 DU
+'''
 
 
 
@@ -143,80 +220,6 @@ TRAJECTORY_LINEWIDTH = 0.6
 TRAJECTORY_LINESTYLE = "-"
 TRAJECTORY_ALPHA = 0.5
 
-'''
-nohup 
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00'
-COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
-COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
-
-#SO2
-
-outdir="./so2_run"
-mkdir -p "$outdir"
-python plume_backtraj.py \
- --wrfout "$WRFOUT" \
- --start-time '2025-11-24T10:00:00' \
- --column "$COLUMN" --integration-dt 15\
- --efolding-days 35 \
- --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU'\
- --n-columns 3000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
- --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
- --receptor-lat 13.51 --receptor-lon 40.71 \
- --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
- --arrival-bin-minutes 30 \
- --output-txt "$outdir/so2_emission_time_height.txt" --output-figure "$outdir/so2_emission_time_height.png" \
- --trajectory-figure "$outdir/so2_trajectories.png" --trajectory-age "$outdir/so2_trajectory_ages.png"  \
- --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
- --seeds-figure "$outdir/parcel_initial_locations.png" \
- --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
- --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
- --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
- --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
- --map-extent 30 5 65 30
- #--seed-bbox 40. 10 40.1 10.1
-
-
-#Aerosols
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5_4km/wrfout_d01_2025-11-23_06:00:00'
-COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc'
-COLUMN_VAR='aerosol_index_354_388'
-
-for aer in sulf ash10 ash9 ash8 ash7 ash6; do
-    outdir="./${aer}_run"
-    mkdir -p "$outdir"
-    echo " "
-    python plume_backtraj.py \
-        --wrfout "$WRFOUT" \
-        --aer-type "$aer" \
-        --start-time '2025-11-24T10:00:00' \
-        --column "$COLUMN" --integration-dt 15 \
-        --column-var "$COLUMN_VAR" --column-coef 1 --threshold 0.10 --colorbar-label 'Aerosol Index' \
-        --n-columns 50 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
-        --emission-start '2025-11-23T08:30:00' --emission-end   '2025-11-24T10:00:00' \
-        --receptor-lat 13.51 --receptor-lon 40.71 \
-        --receptor-radius 10000 --receptor-min-h 1000 --receptor-max-h 30000 \
-        --arrival-bin-minutes 30 \
-        --output-txt              "$outdir/emission_time_height.txt" \
-        --output-figure           "$outdir/emission_time_height.png" \
-        --trajectory-figure       "$outdir/trajectories.png" \
-        --trajectory-age          "$outdir/trajectory_ages.png" \
-        --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
-        --seeds-figure "$outdir/parcel_initial_locations.png" \
-        --mass-figure "$outdir/mass_matrix.png" --mass-output-txt "$outdir/mass_emission_time_height.txt" \
-        --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
-        --missed-trajectory-figure        "$outdir/missed_trajectories.png" \
-        --figure-dpi 300 --state-pickle            "$outdir/run_state.pkl" \
-        --map-extent 30 5 65 30
-done
-
- --aer-type can be 'sulf', 'ash1', … 'ash10'
- --seed-bbox 37 9 43 11
-
-# --hourly-figures
-#--seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png" \
-
-1 mol/m² ≈ 6.022e23 / 2.687e20 ≈ 2243 DU
-'''
 
 PLATE_CARREE = ccrs.PlateCarree()
 
@@ -955,6 +958,8 @@ def advect_parcels_backward_wrf(
             mask_plot = active | arrived
             parcels_snapshot = dict(j=j_p[mask_plot], i=i_p[mask_plot])
             total_steps = snapshot_config.get("total_steps", it_start)
+            figure_dpi = snapshot_config.get("figure_dpi", 200)
+            colorbar_label = snapshot_config.get("colorbar_label", "Column value")
             reverse_index = max(total_steps - step_idx, 0)
             snapshot_path = (
                 snapshot_config["output_dir"]
@@ -976,6 +981,7 @@ def advect_parcels_backward_wrf(
                 receptor_lon=snapshot_config.get("receptor_lon"),
                 receptor_radius_m=snapshot_config.get("receptor_radius_m"),
                 seed_bbox=snapshot_config.get("seed_bbox"),
+                colorbar_label=colorbar_label,
                 figure_dpi=figure_dpi,
                 map_extent=snapshot_config.get("map_extent"),
             )
@@ -1199,7 +1205,7 @@ def plot_seed_vertical_distribution(
         edgecolors="black",
     )
     ax.set_xlabel("Grid-column index")
-    ax.set_ylabel("Initial altitude (km)")
+    ax.set_ylabel("Initial altitude, km")
     ax.set_title("Initial vertical distribution of parcels")
     ax.grid(True, linestyle=":", linewidth=0.4, alpha=0.6)
     ax.text(
@@ -2666,7 +2672,7 @@ def main(args):
             f"Requested z_max={z_max:.1f} m exceeds model top {model_max_height:.1f} m."
         )
 
-    # Parse eruption start time (optional)
+    # Parse emission start time (optional)
     emission_start_time = None
     if args.emission_start is not None:
         s = args.emission_start.strip()
@@ -2678,7 +2684,7 @@ def main(args):
 
         if emission_start_time < times_arr[0] or emission_start_time > times_arr[-1]:
             raise ValueError(
-                f"Eruption start time {emission_start_time} outside WRF time range "
+                f"emission start time {emission_start_time} outside WRF time range "
                 f"[{times_arr[0]}, {times_arr[-1]}]."
             )
 
@@ -2696,7 +2702,7 @@ def main(args):
             raise ValueError("emission-end must be later than emission-start.")
         if emission_end_time < times_arr[0] or emission_end_time > times_arr[-1]:
             raise ValueError(
-                f"Eruption end time {emission_end_time} outside WRF time range "
+                f"emission end time {emission_end_time} outside WRF time range "
                 f"[{times_arr[0]}, {times_arr[-1]}]."
             )
 
@@ -2823,6 +2829,7 @@ def main(args):
                 receptor_radius_m=receptor_radius_m,
                 seed_bbox=seed_bbox,
                 map_extent=map_extent,
+                colorbar_label=args.colorbar_label,
                 output_dir=Path("."),
                 prefix="parcel_positions_hour_",
                 total_steps=it_start,
@@ -3030,20 +3037,20 @@ def main(args):
             (emission_end_time - emission_start_time) / np.timedelta64(1, "s")
         ).astype(float)
         if duration_sec <= 0:
-            raise ValueError("Eruption duration must be positive.")
+            raise ValueError("emission duration must be positive.")
         
         n_time_bins = int(np.ceil(duration_sec / bin_width_sec))
         if n_time_bins == 0 and duration_sec > 0:
             n_time_bins = 1
 
         if n_time_bins <= 0:
-            raise ValueError("Computed zero or negative time bins; adjust eruption window or bin width.")
+            raise ValueError("Computed zero or negative time bins; adjust emission window or bin width.")
 
         emission = np.zeros((nz_bins, n_time_bins), dtype=float)
         mass_emission = np.zeros_like(emission)
         time_axis_mode = "datetime"
         if arrival_time_sec.size > 0:
-            # Parcels arriving after the eruption ends are still counted if they are within the last time bin
+            # Parcels arriving after the emission ends are still counted if they are within the last time bin
             valid_window = (arrival_time_sec >= 0.0) & (arrival_time_sec < duration_sec + bin_width_sec)
             arrival_time_win = arrival_time_sec[valid_window]
             arrival_counts_win = arrival_counts[valid_window]

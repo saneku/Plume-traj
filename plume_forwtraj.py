@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import argparse
 import warnings
 import pickle
@@ -14,13 +13,15 @@ import cartopy.crs as ccrs
 from scipy.interpolate import RegularGridInterpolator
 
 ''' 
-Example usage:'
+Example usage:
+
+WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-_*'
 
 python plume_forwtraj.py \
-  --wrfout /scratch/ukhova/SandBox/WRF/run_hayligubbi/ERA5/ERA5_100km/wrfout_d01_2025-1* \
+  --wrfout "$WRFOUT" \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
-  --aer-type ash9 \
+  --aer-type sulf \
   --integration-dt 15 \
   --source-lat 13.51 \
   --source-lon 40.71 \
@@ -31,7 +32,7 @@ python plume_forwtraj.py \
   --height-figure plume_height_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
   --state-pickle forward_run.pkl \
-  --map-extent 35 5 65 30
+  --map-extent 30 5 65 30 
   ##--seed-bbox 40.0 10.0 50.1 20.1 --n-columns 25 \
   
   
