@@ -55,7 +55,7 @@ A NetCDF file containing the SO₂ column field.
 - Dimensions: `(time, south_north, west_east)` or `(south_north, west_east)`
 - Variable name: by default `SO2_COLUMN` (changeable via `--column-var`)
 
-If the column field has a time dimension, the script uses the time index matching the chosen WRF start time (the closest WRF output to `--start-time`). If the column file is shorter, the last available column time is used instead.
+If the column field has a time dimension, the script uses the time index matching the chosen WRF start time (the closest WRF output to `--start-time`, which must fall inside the WRF time range). If the column file is shorter, the last available column time is used instead.
 
 ---
 
@@ -115,7 +115,7 @@ Full argument list:
   Sub-step (seconds) used for backward advection between two consecutive WRF output times. Leave at the native WRF time step for best fidelity.
 
 - `--start-time` (optional, string)
-  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. If not provided, the last time step from the WRF file is used.
+  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. Must fall within the WRF time range; the script uses the closest WRF output time (and warns if it is more than 1 minute away). If not provided, the last time step from the WRF file is used.
 
 - `--aer-type` (optional)
   Aerosol type for gravitational settling (e.g., `sulf`, `ash1`, etc.). If provided, applies a size-dependent settling velocity to parcels during advection.
@@ -221,7 +221,7 @@ Outputs an initial parcel set with:
 ### 4.3 Backward advection
 
 `advect_parcels_backward_wrf()`:
-- Slices the WRF data to start from the time index closest to `--start-time`.
+- Slices the WRF data to start from the time index closest to `--start-time` (which must fall within the WRF time range).
 - Converts WRF time axis to seconds relative to:
   - `emission_start_time` (if provided), or
   - first WRF time (`times[0]` otherwise).
@@ -362,12 +362,13 @@ You can copy `plume_backtraj.py` and this `plume_backtraj.md` file to another co
 ## 7. Notes on Input Data
 
 - The SO2 column file must already be on the WRF grid (`south_north`, `west_east`).
-- If the column file has a time dimension, the script uses the time index matching the chosen WRF start time.
+- If the column file has a time dimension, the script uses the time index matching the chosen WRF start time (must be within the WRF time range).
 - Ensure `--z-min/--z-max` are within the WRF model top; the script will error if `z-max` exceeds it.
 
 ---
 
 ## 8. Troubleshooting
 
+- **Start time outside WRF range**: pick a `--start-time` between the first and last WRF output times (inclusive).
 - **No parcels reach the receptor**: check receptor location/radius and the plume threshold.
 - **Cartopy errors**: install `cartopy` with conda if pip wheels are not available for your system.

@@ -4,6 +4,11 @@ from pathlib import Path
 import pickle
 from glob import glob
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*`np\.bool` is a deprecated alias.*")
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=r'.*facecolor will have no effect as it has been defined as "never".*',
+)
 
 import matplotlib
 matplotlib.use('Agg')
@@ -1004,8 +1009,16 @@ def advect_parcels_backward_wrf(
         last_active_time_idx = np.array(trajectory_active).T[not_arrived_indices].sum(axis=1) - 1
         final_time_sec[not_arrived_indices] = np.array(trajectory_times)[last_active_time_idx]
 
-        final_pts = np.column_stack((k_p[not_arrived_indices], j_p[not_arrived_indices], i_p[not_arrived_indices]))
-        final_z[not_arrived_indices] = interp_z_lo(final_pts) # Use last available interpolator
+        final_pts = np.column_stack(
+            (k_p[not_arrived_indices], j_p[not_arrived_indices], i_p[not_arrived_indices])
+        )
+        interp_z_final = RegularGridInterpolator(
+            (k_coords, j_coords, i_coords),
+            z_center[it_finish],
+            bounds_error=False,
+            fill_value=np.nan,
+        )
+        final_z[not_arrived_indices] = interp_z_final(final_pts)  # Use last available grid
 
     result = dict(parcels)
     result["arrived"] = arrived
@@ -2718,6 +2731,11 @@ def main(args):
         else:
             s_iso = s
         start_time_dt = np.datetime64(s_iso)
+        if start_time_dt < times_arr[0] or start_time_dt > times_arr[-1]:
+            raise ValueError(
+                f"start time {start_time_dt} outside WRF time range "
+                f"[{times_arr[0]}, {times_arr[-1]}]."
+            )
         time_diffs = np.abs(times_arr - start_time_dt)
         it_start = np.argmin(time_diffs)
         if time_diffs[it_start] > np.timedelta64(1, 'm'):

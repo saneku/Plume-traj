@@ -56,7 +56,7 @@ Both workflows of the \texttt{Plume-Traj} require meteorological data: one or mo
 
 
 \subsection{Parcel Initialization for backward-in-time run}
-The backward-in-time simulation begins at a specified time (parameter \path{--start-time}) by defining the starting locations of the backward-in-time trajectories. This process is called parcel seeding:
+The backward-in-time simulation begins at a specified time (parameter \path{--start-time}) by defining the starting locations of the backward-in-time trajectories. The start time must fall within the WRF output time range. This process is called parcel seeding:
 \begin{itemize}
     \item The location of the NetCDF file (\path{--column}) containing a 2D field representing the total vertical column density (or its equivalent) of some substance (e.g., SO$_2$ column, AI, or AOD) on the same horizontal grid as the WRF data (Sec. \ref{preproc}). A plume mask is created from the satellite column data (\texttt{--column-var}) (optionally scaled by \path{--column-coef})  by identifying all grid cells where the substance's concentration exceeds a user-defined threshold (\texttt{--threshold}). Within this masked area, a specified number (\texttt{--n-columns}) of horizontal locations is randomly chosen.
     \item At each of these locations, a vertical line of parcels (\texttt{--n-vert}) is initialized, distributed randomly between a minimum (\texttt{--z-min}) and maximum (\texttt{--z-max}) altitude. Parcels are placed in the corresponding WRF grid cell. Increasing the total number of parcels (via larger \path{--n-columns} and/or \path{--n-vert}) generally reduces sampling noise and yields more stable, converged results, at the cost of longer runtimes.
