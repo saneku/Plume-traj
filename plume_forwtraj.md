@@ -109,6 +109,9 @@ Full argument list:
 - `--age-figure` (default: `parcel_ages.png`)  
   Output PNG for trajectories coloured by parcel age since release.
 
+- `--deposition-figure` (optional)  
+  Output PNG for deposited parcels only, coloured by deposition hour since release.
+
 - `--seeds-vertical-figure` (optional)  
   Output PNG for the initial vertical parcel distribution.
 
@@ -135,6 +138,7 @@ The script writes:
 
 - A height-colored trajectory map (`--height-figure`)
 - An age-colored trajectory map (`--age-figure`)
+- Optional deposited-parcel map colored by deposition hour (`--deposition-figure`)
 - Optional initial vertical distribution (`--seeds-vertical-figure`)
 - Optional hourly parcel-location maps (`--hourly-figures`)
 - Optional pickle file (`--state-pickle`)
@@ -158,6 +162,7 @@ Optional overrides:
 python plot_forwtraj.py forward_run.pkl \
   --height-figure plume_height_colored_replot.png \
   --age-figure plume_age_colored_replot.png \
+  --deposition-figure deposited_parcels_by_hour_replot.png \
   --seeds-vertical-figure seeds_vertical_replot.png \
   --hourly-figures \
   --hourly-output-dir ./hourly_maps_replot
@@ -167,6 +172,7 @@ Replot helper options now include:
 
 - `--hourly-figures` to regenerate hourly parcel-location maps from the saved state.
 - `--hourly-output-dir` to control where hourly images are written.
+- `--deposition-figure` to save only deposited parcels colored by deposition hour.
 
 ---
 

@@ -17,6 +17,7 @@ python misc/aggregate_forwtraj.py \
   --height-figure plume_height_colored_aggregate.png \
   --age-figure plume_age_colored_aggregate.png \
   --seeds-vertical-figure seeds_vertical_aggregate.png \
+  --deposition-figure deposited_by_hour_aggregate.png \
   --hourly-figures \
   --hourly-output-dir ./hourly_maps_aggregate \
   --map-extent 30 5 65 30
@@ -26,6 +27,7 @@ python misc/aggregate_forwtraj.py \
 from plume_forwtraj import (
     plot_trajectories_by_height,
     plot_trajectories_by_age,
+    plot_deposited_parcels_by_hour,
     plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
@@ -48,6 +50,14 @@ def parse_args():
         "--age-figure",
         default="plume_age_colored_aggregate.png",
         help="Output PNG for trajectories colored by age.",
+    )
+    parser.add_argument(
+        "--deposition-figure",
+        default=None,
+        help=(
+            "Optional output PNG for deposited parcels only, "
+            "colored by deposition hour since release."
+        ),
     )
     parser.add_argument(
         "--seeds-vertical-figure",
@@ -90,6 +100,45 @@ def _pad_time(arr, target, fill):
     return np.pad(arr, pad_w, mode="constant", constant_values=fill)
 
 
+def _pad_time_with_last(arr, target):
+    """
+    Pad time axis by repeating the final available snapshot.
+    """
+    if arr.shape[0] >= target:
+        return arr
+    n_add = target - arr.shape[0]
+    tail = np.repeat(arr[-1:, ...], n_add, axis=0)
+    return np.concatenate([arr, tail], axis=0)
+
+
+def _non_deposited_parcel_mask(trajectory_k, trajectory_active, tol=1e-6):
+    """
+    Return parcel mask that excludes parcels deposited at the lower boundary.
+
+    A parcel is treated as deposited if its first inactive snapshot is at/under
+    k=0 (within tolerance).
+    """
+    if trajectory_k is None:
+        return None
+
+    traj_k = np.asarray(trajectory_k, dtype=float)
+    active_hist = np.asarray(trajectory_active, dtype=bool)
+    if traj_k.ndim != 2 or active_hist.ndim != 2 or traj_k.shape != active_hist.shape:
+        return None
+
+    n_parcels = traj_k.shape[1]
+    keep = np.ones(n_parcels, dtype=bool)
+    for p in range(n_parcels):
+        inactive_idx = np.where(~active_hist[:, p])[0]
+        if inactive_idx.size == 0:
+            continue
+        idx = int(inactive_idx[0])
+        kval = traj_k[idx, p]
+        if np.isfinite(kval) and kval <= tol:
+            keep[p] = False
+    return keep
+
+
 def load_and_aggregate(pickle_paths):
     aggregated_state = None
 
@@ -105,6 +154,8 @@ def load_and_aggregate(pickle_paths):
             traj["i"] = np.asarray(traj["i"])
             traj["j"] = np.asarray(traj["j"])
             traj["active"] = np.asarray(traj["active"])
+            if "k" in traj:
+                traj["k"] = np.asarray(traj["k"])
             if "height_hist_m" in traj:
                 traj["height_hist_m"] = np.asarray(traj["height_hist_m"])
             if "times" in traj:
@@ -119,27 +170,54 @@ def load_and_aggregate(pickle_paths):
 
         agg_traj = aggregated_state["trajectories"]
         new_traj = state["trajectories"]
+        new_traj["i"] = np.asarray(new_traj["i"])
+        new_traj["j"] = np.asarray(new_traj["j"])
+        new_traj["active"] = np.asarray(new_traj["active"])
+        if "k" in new_traj:
+            new_traj["k"] = np.asarray(new_traj["k"])
+        if "height_hist_m" in new_traj:
+            new_traj["height_hist_m"] = np.asarray(new_traj["height_hist_m"])
 
         t_agg = agg_traj["i"].shape[0]
         t_new = new_traj["i"].shape[0]
         if t_agg != t_new:
             t_max = max(t_agg, t_new)
             print(f"[diag] Time dimension mismatch: {t_agg} vs {t_new}. Padding to {t_max}.")
-            agg_traj["i"] = _pad_time(agg_traj["i"], t_max, np.nan)
-            agg_traj["j"] = _pad_time(agg_traj["j"], t_max, np.nan)
+            # Keep final parcel position/state visible after a shorter run ends.
+            agg_traj["i"] = _pad_time_with_last(agg_traj["i"], t_max)
+            agg_traj["j"] = _pad_time_with_last(agg_traj["j"], t_max)
             agg_traj["active"] = _pad_time(agg_traj["active"], t_max, False)
+            if "k" in agg_traj:
+                agg_traj["k"] = _pad_time_with_last(agg_traj["k"], t_max)
             if "height_hist_m" in agg_traj:
-                agg_traj["height_hist_m"] = _pad_time(agg_traj["height_hist_m"], t_max, np.nan)
+                agg_traj["height_hist_m"] = _pad_time_with_last(
+                    agg_traj["height_hist_m"], t_max
+                )
 
-            new_traj["i"] = _pad_time(new_traj["i"], t_max, np.nan)
-            new_traj["j"] = _pad_time(new_traj["j"], t_max, np.nan)
+            new_traj["i"] = _pad_time_with_last(new_traj["i"], t_max)
+            new_traj["j"] = _pad_time_with_last(new_traj["j"], t_max)
             new_traj["active"] = _pad_time(new_traj["active"], t_max, False)
+            if "k" in new_traj:
+                new_traj["k"] = _pad_time_with_last(new_traj["k"], t_max)
             if "height_hist_m" in new_traj:
-                new_traj["height_hist_m"] = _pad_time(new_traj["height_hist_m"], t_max, np.nan)
+                new_traj["height_hist_m"] = _pad_time_with_last(
+                    new_traj["height_hist_m"], t_max
+                )
 
         agg_traj["i"] = np.concatenate([agg_traj["i"], new_traj["i"]], axis=1)
         agg_traj["j"] = np.concatenate([agg_traj["j"], new_traj["j"]], axis=1)
         agg_traj["active"] = np.concatenate([agg_traj["active"], new_traj["active"]], axis=1)
+        if "k" in agg_traj and "k" in new_traj:
+            agg_traj["k"] = np.concatenate([agg_traj["k"], new_traj["k"]], axis=1)
+        elif "k" in agg_traj and "k" not in new_traj:
+            # Keep shape consistent when mixing old/new pickles by padding missing k.
+            missing_k = np.full(new_traj["i"].shape, np.nan, dtype=float)
+            agg_traj["k"] = np.concatenate([agg_traj["k"], missing_k], axis=1)
+        elif "k" not in agg_traj and "k" in new_traj:
+            # Backfill previous parcels with NaN k if earlier pickles had no k.
+            old_cols = agg_traj["i"].shape[1] - new_traj["i"].shape[1]
+            backfill_k = np.full((agg_traj["i"].shape[0], old_cols), np.nan, dtype=float)
+            agg_traj["k"] = np.concatenate([backfill_k, new_traj["k"]], axis=1)
 
         if "height_hist_m" in agg_traj and "height_hist_m" in new_traj:
             agg_traj["height_hist_m"] = np.concatenate(
@@ -177,6 +255,13 @@ def main():
     height_hist = trajectories.get("height_hist_m")
     if height_hist is None:
         raise ValueError("Aggregated trajectories do not contain height history.")
+    traj_i_all = np.asarray(trajectories["i"])
+    traj_j_all = np.asarray(trajectories["j"])
+    traj_active_all = np.asarray(trajectories["active"])
+    traj_k_all = trajectories.get("k")
+    if traj_k_all is not None:
+        traj_k_all = np.asarray(traj_k_all)
+    height_hist_all = np.asarray(height_hist)
     seed_bbox = script_args.get("seed_bbox")
     if seed_bbox is not None:
         seed_bbox = tuple(seed_bbox)
@@ -212,12 +297,13 @@ def main():
         n_hourly = plot_hourly_parcel_snapshots(
             xlat=xlat,
             xlon=xlon,
-            trajectory_i=trajectories["i"],
-            trajectory_j=trajectories["j"],
-            trajectory_active=trajectories["active"],
+            trajectory_i=traj_i_all,
+            trajectory_j=traj_j_all,
+            trajectory_active=traj_active_all,
+            trajectory_k=traj_k_all,
             trajectory_times_sec=trajectories["times"],
             out_dir=args.hourly_output_dir,
-            height_hist_m=height_hist,
+            height_hist_m=height_hist_all,
             figure_dpi=fig_dpi,
             seed_bbox=seed_bbox,
             source_lat=source_lat,
@@ -228,40 +314,84 @@ def main():
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            "using 'parcel_positions_hour_XXX.png' naming."
+            "using 'parcel_positions_hour.XXXX.png' naming."
         )
 
-    plot_trajectories_by_height(
-        xlat=xlat,
-        xlon=xlon,
-        trajectory_i=trajectories["i"],
-        trajectory_j=trajectories["j"],
-        trajectory_active=trajectories["active"],
-        height_hist_m=height_hist,
-        out_path=args.height_figure,
-        height_min=None,
-        height_max=None,
-        figure_dpi=fig_dpi,
-        seed_bbox=seed_bbox,
-        source_lat=source_lat,
-        source_lon=source_lon,
-        map_extent=map_extent,
-    )
+    if args.deposition_figure is not None:
+        saved_dep = plot_deposited_parcels_by_hour(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=traj_i_all,
+            trajectory_j=traj_j_all,
+            trajectory_active=traj_active_all,
+            trajectory_k=traj_k_all,
+            trajectory_times_sec=trajectories["times"],
+            out_path=args.deposition_figure,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+        )
+        if saved_dep:
+            print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
 
-    plot_trajectories_by_age(
-        xlat=xlat,
-        xlon=xlon,
-        trajectory_i=trajectories["i"],
-        trajectory_j=trajectories["j"],
-        trajectory_active=trajectories["active"],
-        trajectory_times_sec=trajectories["times"],
-        out_path=args.age_figure,
-        figure_dpi=fig_dpi,
-        seed_bbox=seed_bbox,
-        source_lat=source_lat,
-        source_lon=source_lon,
-        map_extent=map_extent,
-    )
+    keep_non_dep = _non_deposited_parcel_mask(traj_k_all, traj_active_all)
+    if keep_non_dep is None:
+        i_plot = traj_i_all
+        j_plot = traj_j_all
+        active_plot = traj_active_all
+        k_plot = traj_k_all
+        height_plot = height_hist_all
+    else:
+        n_removed = int((~keep_non_dep).sum())
+        n_total = int(keep_non_dep.size)
+        print(
+            "[diag] Excluding deposited parcels from aggregate age/height plots: "
+            f"{n_removed}/{n_total} removed."
+        )
+        i_plot = traj_i_all[:, keep_non_dep]
+        j_plot = traj_j_all[:, keep_non_dep]
+        active_plot = traj_active_all[:, keep_non_dep]
+        height_plot = height_hist_all[:, keep_non_dep]
+        k_plot = traj_k_all[:, keep_non_dep] if traj_k_all is not None else None
+
+    if i_plot.shape[1] == 0:
+        print("[diag] No non-deposited parcels remain; skipping aggregate age/height plots.")
+    else:
+        plot_trajectories_by_height(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=i_plot,
+            trajectory_j=j_plot,
+            trajectory_active=active_plot,
+            trajectory_k=k_plot,
+            height_hist_m=height_plot,
+            out_path=args.height_figure,
+            height_min=None,
+            height_max=None,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+        )
+
+        plot_trajectories_by_age(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=i_plot,
+            trajectory_j=j_plot,
+            trajectory_active=active_plot,
+            trajectory_k=k_plot,
+            trajectory_times_sec=trajectories["times"],
+            out_path=args.age_figure,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+        )
 
     if args.seeds_vertical_figure is not None:
         initial_parcels = state.get("initial_parcels")

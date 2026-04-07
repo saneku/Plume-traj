@@ -9,6 +9,7 @@ python plot_forwtraj.py forward_run.pkl \
   --height-figure my_height.png \
   --age-figure my_age.png \
   --seeds-vertical-figure seeds_vertical.png \
+  --deposition-figure deposited_by_hour_replot.png \
   --map-extent 30 5 65 30 \
   --figure-dpi 300
 '''
@@ -16,6 +17,7 @@ python plot_forwtraj.py forward_run.pkl \
 from plume_forwtraj import (
     plot_trajectories_by_height,
     plot_trajectories_by_age,
+    plot_deposited_parcels_by_hour,
     plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
@@ -38,6 +40,14 @@ def parse_args():
         "--age-figure",
         default="plume_age_colored_replot.png",
         help="Output PNG for trajectories colored by age.",
+    )
+    parser.add_argument(
+        "--deposition-figure",
+        default=None,
+        help=(
+            "Optional output PNG for deposited parcels only, "
+            "colored by deposition hour since release."
+        ),
     )
     parser.add_argument(
         "--seeds-vertical-figure",
@@ -128,6 +138,7 @@ def main():
             trajectory_i=trajectories["i"],
             trajectory_j=trajectories["j"],
             trajectory_active=trajectories["active"],
+            trajectory_k=trajectories.get("k"),
             trajectory_times_sec=trajectories["times"],
             out_dir=args.hourly_output_dir,
             height_hist_m=height_hist,
@@ -141,7 +152,7 @@ def main():
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            "using 'parcel_positions_hour_XXX.png' naming."
+            "using 'parcel_positions_hour.XXXX.png' naming."
         )
 
     plot_trajectories_by_height(
@@ -150,6 +161,7 @@ def main():
         trajectory_i=trajectories["i"],
         trajectory_j=trajectories["j"],
         trajectory_active=trajectories["active"],
+        trajectory_k=trajectories.get("k"),
         height_hist_m=height_hist,
         out_path=args.height_figure,
         height_min=None,
@@ -167,6 +179,7 @@ def main():
         trajectory_i=trajectories["i"],
         trajectory_j=trajectories["j"],
         trajectory_active=trajectories["active"],
+        trajectory_k=trajectories.get("k"),
         trajectory_times_sec=trajectories["times"],
         out_path=args.age_figure,
         figure_dpi=fig_dpi,
@@ -175,6 +188,23 @@ def main():
         source_lon=source_lon,
         map_extent=map_extent,
     )
+
+    if args.deposition_figure is not None:
+        plot_deposited_parcels_by_hour(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=trajectories["i"],
+            trajectory_j=trajectories["j"],
+            trajectory_active=trajectories["active"],
+            trajectory_k=trajectories.get("k"),
+            trajectory_times_sec=trajectories["times"],
+            out_path=args.deposition_figure,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+        )
 
     if args.seeds_vertical_figure is not None:
         initial_parcels = state.get("initial_parcels")

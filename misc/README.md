@@ -22,6 +22,7 @@ Aggregates multiple forward-trajectory pickle outputs into one combined trajecto
 - Aligns time dimensions (padding when needed).
 - Concatenates parcel trajectories and optional height-history arrays.
 - Regenerates aggregated height-colored and age-colored trajectory maps.
+- Optionally saves deposited parcels only, colored by deposition hour (`--deposition-figure`).
 - Optionally regenerates hourly parcel-location maps (`--hourly-figures`).
 
 Typical use:

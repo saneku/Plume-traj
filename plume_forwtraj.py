@@ -31,6 +31,7 @@ python plume_forwtraj.py \
   --z-max 23000 \
   --n-vert 30 \
   --age-figure plume_age_colored.png \
+  --deposition-figure deposited_by_hour.png \
   --height-figure plume_height_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
   --hourly-figures \
@@ -581,18 +582,19 @@ def advect_parcels_forward_wrf(
             j_new = j_p[idxs] + delta_pos[:, 1]
             k_new = k_p[idxs] + delta_pos[:, 2]
 
+            out_i = (i_new < 0) | (i_new > nx - 1)
+            out_j = (j_new < 0) | (j_new > ny - 1)
+            out_k_low = k_new < 0
+            out_k_high = k_new > nz - 1
+            # Keep ground-touching parcels on the lowest model layer so they remain plottable.
+            if out_k_low.any():
+                k_new[out_k_low] = 0.0
+
             i_p[idxs] = i_new
             j_p[idxs] = j_new
             k_p[idxs] = k_new
 
-            out = (
-                (i_new < 0)
-                | (i_new > nx - 1)
-                | (j_new < 0)
-                | (j_new > ny - 1)
-                | (k_new < 0)
-                | (k_new > nz - 1)
-            )
+            out = out_i | out_j | out_k_low | out_k_high
             if out.any():
                 active[idxs[out]] = False
 
@@ -746,12 +748,49 @@ def _trajectory_latlon_history(xlat, xlon, trajectory_i, trajectory_j):
     return lat_hist, lon_hist
 
 
+def _ground_stop_indices(trajectory_k, trajectory_active, tol=1e-6):
+    """
+    Identify parcels that stop after hitting the lower model boundary (k <= 0).
+
+    Returns
+    -------
+    ground_mask : (n_parcels,) bool
+        True where parcel first became inactive at/under the ground index.
+    stop_idx : (n_parcels,) int
+        Snapshot index of first inactive state for those parcels, -1 otherwise.
+    """
+    if trajectory_k is None:
+        return None, None
+
+    traj_k = np.asarray(trajectory_k, dtype=float)
+    active_hist = np.asarray(trajectory_active, dtype=bool)
+    if traj_k.shape != active_hist.shape or traj_k.ndim != 2:
+        return None, None
+
+    _, n_parcels = traj_k.shape
+    ground_mask = np.zeros(n_parcels, dtype=bool)
+    stop_idx = np.full(n_parcels, -1, dtype=int)
+
+    for p in range(n_parcels):
+        inactive_idx = np.where(~active_hist[:, p])[0]
+        if inactive_idx.size == 0:
+            continue
+        idx = int(inactive_idx[0])
+        kval = traj_k[idx, p]
+        if np.isfinite(kval) and kval <= tol:
+            ground_mask[p] = True
+            stop_idx[p] = idx
+
+    return ground_mask, stop_idx
+
+
 def plot_trajectories_by_height(
     xlat,
     xlon,
     trajectory_i,
     trajectory_j,
     trajectory_active,
+    trajectory_k,
     height_hist_m,
     out_path,
     height_min=None,
@@ -772,6 +811,7 @@ def plot_trajectories_by_height(
     traj_j = np.asarray(trajectory_j)
     active_hist = np.asarray(trajectory_active, dtype=bool)
     lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
+    ground_mask, ground_stop_idx = _ground_stop_indices(trajectory_k, active_hist)
 
     fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
 
@@ -806,7 +846,9 @@ def plot_trajectories_by_height(
         np.stack([lon_hist[1:, :], lat_hist[1:, :]], axis=2),
     ]).transpose(2, 1, 0, 3)
 
-    active_mask = (active_hist[:-1, :] & active_hist[1:, :]).T
+    # Draw segments while parcels are active at the segment start; this keeps
+    # the final segment visible even when a parcel deactivates at the end point.
+    active_mask = active_hist[:-1, :].T
     if active_mask.any():
         heights_seg = heights_m[:-1, :].T
         color_idx = np.digitize(heights_seg, h_bins_m) - 1
@@ -823,6 +865,23 @@ def plot_trajectories_by_height(
             transform=ccrs.PlateCarree(),
         )
         ax.add_collection(lc)
+
+    if ground_mask is not None and np.any(ground_mask):
+        cols = np.where(ground_mask)[0]
+        rows = ground_stop_idx[cols]
+        lon_stop = lon_hist[rows, cols]
+        lat_stop = lat_hist[rows, cols]
+        valid_stop = np.isfinite(lon_stop) & np.isfinite(lat_stop)
+        if valid_stop.any():
+            ax.scatter(
+                lon_stop[valid_stop],
+                lat_stop[valid_stop],
+                s=16.0,
+                c="black",
+                edgecolors="none",
+                transform=ccrs.PlateCarree(),
+                zorder=8,
+            )
 
     if source_lat is not None and source_lon is not None:
         ax.scatter(
@@ -874,6 +933,7 @@ def plot_trajectories_by_age(
     trajectory_i,
     trajectory_j,
     trajectory_active,
+    trajectory_k,
     trajectory_times_sec,
     out_path,
     figure_dpi=200,
@@ -887,6 +947,7 @@ def plot_trajectories_by_age(
     traj_j = np.asarray(trajectory_j)
     active_hist = np.asarray(trajectory_active, dtype=bool)
     lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
+    ground_mask, ground_stop_idx = _ground_stop_indices(trajectory_k, active_hist)
 
     traj_times = np.asarray(trajectory_times_sec, dtype=float)
     if traj_times.size < 2:
@@ -910,7 +971,9 @@ def plot_trajectories_by_age(
         np.stack([lon_hist[1:, :], lat_hist[1:, :]], axis=2),
     ]).transpose(2, 1, 0, 3)
 
-    active_mask = (active_hist[:-1, :] & active_hist[1:, :]).T
+    # Draw segments while parcels are active at the segment start; this keeps
+    # the final segment visible even when a parcel deactivates at the end point.
+    active_mask = active_hist[:-1, :].T
     if active_mask.any():
         age_seg = age_hours[:-1]
         color_idx = np.digitize(age_seg, age_bins) - 1
@@ -928,6 +991,23 @@ def plot_trajectories_by_age(
             transform=ccrs.PlateCarree(),
         )
         ax.add_collection(lc)
+
+    if ground_mask is not None and np.any(ground_mask):
+        cols = np.where(ground_mask)[0]
+        rows = ground_stop_idx[cols]
+        lon_stop = lon_hist[rows, cols]
+        lat_stop = lat_hist[rows, cols]
+        valid_stop = np.isfinite(lon_stop) & np.isfinite(lat_stop)
+        if valid_stop.any():
+            ax.scatter(
+                lon_stop[valid_stop],
+                lat_stop[valid_stop],
+                s=16.0,
+                c="black",
+                edgecolors="none",
+                transform=ccrs.PlateCarree(),
+                zorder=8,
+            )
 
     if source_lat is not None and source_lon is not None:
         ax.scatter(
@@ -967,12 +1047,130 @@ def plot_trajectories_by_age(
     return True
 
 
+def plot_deposited_parcels_by_hour(
+    xlat,
+    xlon,
+    trajectory_i,
+    trajectory_j,
+    trajectory_active,
+    trajectory_k,
+    trajectory_times_sec,
+    out_path,
+    figure_dpi=200,
+    seed_bbox=None,
+    source_lat=None,
+    source_lon=None,
+    map_extent=None,
+):
+    """Plot only deposited parcels, colored by deposition hour since release."""
+    if trajectory_k is None:
+        print("[diag] trajectory_k unavailable; skipping deposition-hour figure.")
+        return False
+
+    traj_i = np.asarray(trajectory_i, dtype=float)
+    traj_j = np.asarray(trajectory_j, dtype=float)
+    active_hist = np.asarray(trajectory_active, dtype=bool)
+    traj_times = np.asarray(trajectory_times_sec, dtype=float)
+    if traj_i.ndim != 2 or traj_j.ndim != 2 or traj_i.shape != traj_j.shape:
+        raise ValueError("trajectory_i and trajectory_j must be 2-D arrays with matching shape.")
+    if active_hist.shape != traj_i.shape:
+        raise ValueError("trajectory_active must match trajectory_i shape.")
+    if traj_times.ndim != 1 or traj_times.size != traj_i.shape[0]:
+        raise ValueError("trajectory_times_sec must be 1-D with one entry per trajectory snapshot.")
+
+    ground_mask, ground_stop_idx = _ground_stop_indices(trajectory_k, active_hist)
+    if ground_mask is None or not np.any(ground_mask):
+        print("[diag] No deposited parcels found; skipping deposition-hour figure.")
+        return False
+
+    lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
+    cols = np.where(ground_mask)[0]
+    rows = ground_stop_idx[cols]
+    dep_hours = (traj_times[rows] - traj_times[0]) / 3600.0
+    lon_dep = lon_hist[rows, cols]
+    lat_dep = lat_hist[rows, cols]
+
+    valid = np.isfinite(lon_dep) & np.isfinite(lat_dep) & np.isfinite(dep_hours)
+    if not valid.any():
+        print("[diag] Deposited parcels found but no valid map coordinates for plotting.")
+        return False
+
+    lon_dep = lon_dep[valid]
+    lat_dep = lat_dep[valid]
+    dep_hours = dep_hours[valid]
+
+    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+
+    n_bins = 10
+    hmin = float(np.nanmin(dep_hours))
+    hmax = float(np.nanmax(dep_hours))
+    if np.isclose(hmin, hmax):
+        hmax = hmin + 0.1
+    h_bins = np.linspace(hmin, hmax, n_bins + 1)
+    cmap = plt.get_cmap("plasma", n_bins)
+    norm = BoundaryNorm(h_bins, cmap.N)
+
+    ax.scatter(
+        lon_dep,
+        lat_dep,
+        c=dep_hours,
+        cmap=cmap,
+        norm=norm,
+        s=18.0,
+        alpha=0.9,
+        edgecolors="none",
+        transform=ccrs.PlateCarree(),
+        zorder=8,
+    )
+
+    if source_lat is not None and source_lon is not None:
+        ax.scatter(
+            source_lon,
+            source_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=9,
+            transform=ccrs.PlateCarree(),
+        )
+
+    _plot_seed_bbox(ax, seed_bbox)
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(
+        "Deposited parcels coloured by deposition hour "
+        f"(n={lon_dep.size}, min={hmin:.1f} h, max={hmax:.1f} h)"
+    )
+
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    hour_centers = h_bins[:-1] + 0.5 * np.diff(h_bins)
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cb = plt.colorbar(
+        sm,
+        cax=cax,
+        orientation="horizontal",
+        boundaries=h_bins,
+        ticks=hour_centers,
+    )
+    cb.set_ticklabels([f"{val:.1f}" for val in hour_centers])
+    cb.set_label("Deposition hour since release (h)")
+
+    fig.savefig(out_path, dpi=figure_dpi)
+    plt.close(fig)
+    return True
+
+
 def plot_hourly_parcel_snapshots(
     xlat,
     xlon,
     trajectory_i,
     trajectory_j,
     trajectory_active,
+    trajectory_k,
     trajectory_times_sec,
     out_dir,
     height_hist_m=None,
@@ -988,6 +1186,7 @@ def plot_hourly_parcel_snapshots(
     traj_j = np.asarray(trajectory_j, dtype=float)
     active_hist = np.asarray(trajectory_active, dtype=bool)
     traj_times = np.asarray(trajectory_times_sec, dtype=float)
+    ground_mask, ground_stop_idx = _ground_stop_indices(trajectory_k, active_hist)
     traj_times_utc_arr = None
     if trajectory_times_utc is not None:
         traj_times_utc_arr = np.asarray(trajectory_times_utc)
@@ -1042,21 +1241,33 @@ def plot_hourly_parcel_snapshots(
     saved = 0
     for hour in target_hours:
         snap_idx = int(np.argmin(np.abs(age_hours - float(hour))))
-        active_mask = active_hist[snap_idx]
+        # Show all parcels with valid map coordinates; inactive parcels remain
+        # visible at their final position after advection stops for them.
+        visible_mask = np.isfinite(lon_hist[snap_idx]) & np.isfinite(lat_hist[snap_idx])
 
         fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
-        if active_mask.any():
-            lons = lon_hist[snap_idx, active_mask]
-            lats = lat_hist[snap_idx, active_mask]
+        if visible_mask.any():
+            vis_idx = np.where(visible_mask)[0]
+            lons = lon_hist[snap_idx, vis_idx]
+            lats = lat_hist[snap_idx, vis_idx]
             valid_ll = np.isfinite(lons) & np.isfinite(lats)
+            ground_now_vis = np.zeros(vis_idx.size, dtype=bool)
+            if ground_mask is not None and np.any(ground_mask):
+                ground_now = (
+                    ground_mask
+                    & (~active_hist[snap_idx])
+                    & (ground_stop_idx >= 0)
+                    & (ground_stop_idx <= snap_idx)
+                )
+                ground_now_vis = ground_now[vis_idx]
             if heights_km is not None:
-                hvals = heights_km[snap_idx, active_mask]
-                valid = valid_ll & np.isfinite(hvals)
-                if valid.any():
+                hvals = heights_km[snap_idx, vis_idx]
+                valid_col = valid_ll & np.isfinite(hvals) & (~ground_now_vis)
+                if valid_col.any():
                     ax.scatter(
-                        lons[valid],
-                        lats[valid],
-                        c=hvals[valid],
+                        lons[valid_col],
+                        lats[valid_col],
+                        c=hvals[valid_col],
                         cmap=cmap_height,
                         norm=norm_height,
                         s=10.0,
@@ -1065,17 +1276,40 @@ def plot_hourly_parcel_snapshots(
                         transform=ccrs.PlateCarree(),
                         zorder=6,
                     )
-            else:
-                if valid_ll.any():
+                valid_ground = valid_ll & ground_now_vis
+                if valid_ground.any():
                     ax.scatter(
-                        lons[valid_ll],
-                        lats[valid_ll],
+                        lons[valid_ground],
+                        lats[valid_ground],
+                        s=16.0,
+                        c="black",
+                        edgecolors="none",
+                        transform=ccrs.PlateCarree(),
+                        zorder=8,
+                    )
+            else:
+                valid_non_ground = valid_ll & (~ground_now_vis)
+                if valid_non_ground.any():
+                    ax.scatter(
+                        lons[valid_non_ground],
+                        lats[valid_non_ground],
                         s=10.0,
                         c="deepskyblue",
                         alpha=0.85,
                         edgecolors="none",
                         transform=ccrs.PlateCarree(),
                         zorder=6,
+                    )
+                valid_ground = valid_ll & ground_now_vis
+                if valid_ground.any():
+                    ax.scatter(
+                        lons[valid_ground],
+                        lats[valid_ground],
+                        s=16.0,
+                        c="black",
+                        edgecolors="none",
+                        transform=ccrs.PlateCarree(),
+                        zorder=8,
                     )
 
         if source_lat is not None and source_lon is not None:
@@ -1122,7 +1356,7 @@ def plot_hourly_parcel_snapshots(
             cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
             cb.set_label("Height (km)")
 
-        out_path = out_dir / f"parcel_positions_hour_{hour:03d}.png"
+        out_path = out_dir / f"parcel_positions_hour.{hour:04d}.png"
         fig.savefig(out_path, dpi=figure_dpi)
         plt.close(fig)
         saved += 1
@@ -1226,6 +1460,14 @@ def parse_args():
         "--age-figure",
         default="parcel_ages.png",
         help="Output PNG for trajectories colored by age since release.",
+    )
+    parser.add_argument(
+        "--deposition-figure",
+        default=None,
+        help=(
+            "Output PNG for deposited parcels only, colored by deposition hour "
+            "since release (ground-touching parcels)."
+        ),
     )
     parser.add_argument(
         "--seeds-vertical-figure",
@@ -1430,6 +1672,7 @@ def main(args):
             trajectory_i=result["trajectory_i"],
             trajectory_j=result["trajectory_j"],
             trajectory_active=result["trajectory_active"],
+            trajectory_k=result["trajectory_k"],
             trajectory_times_sec=result["trajectory_times"],
             out_dir=args.hourly_output_dir,
             height_hist_m=height_hist,
@@ -1443,7 +1686,7 @@ def main(args):
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            "using 'parcel_positions_hour_XXX.png' naming."
+            "using 'parcel_positions_hour.XXXX.png' naming."
         )
 
     saved_height = plot_trajectories_by_height(
@@ -1452,6 +1695,7 @@ def main(args):
         trajectory_i=result["trajectory_i"],
         trajectory_j=result["trajectory_j"],
         trajectory_active=result["trajectory_active"],
+        trajectory_k=result["trajectory_k"],
         height_hist_m=height_hist,
         out_path=args.height_figure,
         height_min=None,
@@ -1471,6 +1715,7 @@ def main(args):
         trajectory_i=result["trajectory_i"],
         trajectory_j=result["trajectory_j"],
         trajectory_active=result["trajectory_active"],
+        trajectory_k=result["trajectory_k"],
         trajectory_times_sec=result["trajectory_times"],
         out_path=args.age_figure,
         figure_dpi=fig_dpi,
@@ -1481,6 +1726,25 @@ def main(args):
     )
     if saved_age:
         print(f"[diag] Age-colored figure saved to '{args.age_figure}'.")
+
+    if args.deposition_figure is not None:
+        saved_dep = plot_deposited_parcels_by_hour(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=result["trajectory_i"],
+            trajectory_j=result["trajectory_j"],
+            trajectory_active=result["trajectory_active"],
+            trajectory_k=result["trajectory_k"],
+            trajectory_times_sec=result["trajectory_times"],
+            out_path=args.deposition_figure,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=args.source_lat,
+            source_lon=args.source_lon,
+            map_extent=map_extent,
+        )
+        if saved_dep:
+            print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
 
     if args.state_pickle:
         args_dict = {k: getattr(args, k) for k in vars(args)}
