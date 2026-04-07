@@ -3,7 +3,7 @@
 This repository provides two related scripts for Lagrangian parcel tracking using WRF winds:
 
 - `plume_backtraj.py`: back-trajectory analysis from a 2d field to reconstruct time–height emission scenarios.
-- `plume_forwtraj.py`: forward advection of parcels released from a source column.
+- `plume_forwtraj.py`: forward advection of parcels released from a source column, with optional hourly parcel-location snapshots.
 
 
 ## Documentation
@@ -24,13 +24,13 @@ Both workflows can save a pickle file with `--state-pickle`, which can be used t
 Install required packages (conda example):
 
 ```bash
-conda install numpy scipy netcdf4 matplotlib cartopy
+conda install numpy scipy netcdf4 matplotlib cartopy xarray
 ```
 
 or with `pip`:
 
 ```bash
-pip install numpy scipy netCDF4 matplotlib cartopy
+pip install numpy scipy netCDF4 matplotlib cartopy xarray
 ```
 
 ## Quick Start
@@ -42,10 +42,12 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Plot outputs and diagnostics
 - Re-plotting from saved pickle state
 - Optional `--map-extent WEST SOUTH EAST NORTH` override for custom map bounds
+- Optional forward hourly snapshots with `--hourly-figures`
+- Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
 
 ## Output Files
 
-The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
+The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. In forward mode, `--hourly-figures` saves hourly parcel-location maps (`parcel_positions_hour_XXX.png` by default; customizable via `--hourly-prefix` and `--hourly-output-dir`). Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
 
 ## Misc Utilities
 

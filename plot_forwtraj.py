@@ -16,6 +16,7 @@ python plot_forwtraj.py forward_run.pkl \
 from plume_forwtraj import (
     plot_trajectories_by_height,
     plot_trajectories_by_age,
+    plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
 
@@ -42,6 +43,24 @@ def parse_args():
         "--seeds-vertical-figure",
         default=None,
         help="Optional PNG for the initial vertical distribution of parcels.",
+    )
+    parser.add_argument(
+        "--hourly-figures",
+        action="store_true",
+        help=(
+            "Save parcel-location maps at each whole hour since release. "
+            "Each map uses the nearest available trajectory snapshot."
+        ),
+    )
+    parser.add_argument(
+        "--hourly-prefix",
+        default="parcel_positions_hour_",
+        help="Filename prefix for hourly snapshot images.",
+    )
+    parser.add_argument(
+        "--hourly-output-dir",
+        default=".",
+        help="Output directory for hourly snapshot images.",
     )
     parser.add_argument(
         "--map-extent",
@@ -94,6 +113,42 @@ def main():
         map_extent = script_args.get("map_extent")
         if map_extent is not None:
             map_extent = tuple(map_extent)
+
+    if args.hourly_figures:
+        traj_times_utc = None
+        start_time_utc = state.get("metadata", {}).get("start_time")
+        if start_time_utc is not None:
+            try:
+                t0 = np.datetime64(start_time_utc).astype("datetime64[s]")
+                traj_seconds = np.rint(np.asarray(trajectories["times"], dtype=float)).astype(
+                    np.int64
+                )
+                traj_times_utc = t0 + traj_seconds.astype("timedelta64[s]")
+            except Exception:
+                traj_times_utc = None
+
+        n_hourly = plot_hourly_parcel_snapshots(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=trajectories["i"],
+            trajectory_j=trajectories["j"],
+            trajectory_active=trajectories["active"],
+            trajectory_times_sec=trajectories["times"],
+            out_dir=args.hourly_output_dir,
+            prefix=args.hourly_prefix,
+            height_hist_m=height_hist,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+            trajectory_times_utc=traj_times_utc,
+        )
+        print(
+            "[diag] Hourly snapshots saved: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+            f"with prefix '{args.hourly_prefix}'."
+        )
 
     plot_trajectories_by_height(
         xlat=xlat,

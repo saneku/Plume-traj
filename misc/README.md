@@ -62,4 +62,5 @@ Typical use:
 - Most scripts here are helpers for the main tools in the repository root:
   - `plume_backtraj.py`
   - `plume_forwtraj.py`
+- Forward trajectory runs can now optionally save hourly parcel-location maps via `plume_forwtraj.py --hourly-figures`.
 - Aggregation and plotting scripts expect pickle structures produced by the current versions of the main scripts.

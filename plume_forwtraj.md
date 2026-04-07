@@ -4,6 +4,7 @@ This script releases a vertical column of parcels from one or more WRF grid cell
 
 - **Height-colored trajectories** (parcel height along the path)
 - **Age-colored trajectories** (hours since release)
+- **Optional hourly parcel-location snapshots** (maps at each whole hour since release)
 
 It also supports saving a state pickle for later re-plotting with `plot_forwtraj.py`.
 
@@ -77,7 +78,8 @@ Full argument list:
   WRF output file(s). Wildcards are supported.
 
 - `--start-time`, `--end-time` (required)  
-  UTC start/end time, e.g. `2021-04-10T18:00:00` or `2021-04-10_18:00:00`.
+  UTC start/end time, e.g. `2021-04-10T18:00:00` or `2021-04-10_18:00:00`.  
+  No timezone conversion is applied by the script; values must use the same time basis as WRF `Times` (normally UTC).
 
 - `--source-lat`, `--source-lon` (required unless `--seed-bbox`)  
   Release location (column center), in degrees.
@@ -98,7 +100,8 @@ Full argument list:
   Forward advection sub-step in seconds.
 
 - `--aer-type` (optional)  
-  Aerosol type for gravitational settling (keys in `SETTLING_VEL_MS`).
+  Aerosol type for gravitational settling (keys in `SETTLING_VEL_MS`).  
+  If omitted, parcels are treated as passive tracers with no gravitational settling.
 
 - `--height-figure` (default: `parcel_heights.png`)  
   Output PNG for trajectories coloured by parcel height.
@@ -108,6 +111,15 @@ Full argument list:
 
 - `--seeds-vertical-figure` (optional)  
   Output PNG for the initial vertical parcel distribution.
+
+- `--hourly-figures` (optional flag)  
+  Save parcel-location maps at each whole hour since release.
+
+- `--hourly-prefix` (default: `parcel_positions_hour_`)  
+  Filename prefix for hourly snapshot images.
+
+- `--hourly-output-dir` (default: `.`)  
+  Output directory for hourly snapshot images.
 
 - `--figure-dpi` (default: `200`)  
   DPI used for all figures.
@@ -127,9 +139,11 @@ The script writes:
 - A height-colored trajectory map (`--height-figure`)
 - An age-colored trajectory map (`--age-figure`)
 - Optional initial vertical distribution (`--seeds-vertical-figure`)
+- Optional hourly parcel-location maps (`--hourly-figures`)
 - Optional pickle file (`--state-pickle`)
 
 If `--seed-bbox` is used, the bbox outline is drawn on the maps.
+Hourly maps use the nearest available trajectory snapshot to each whole hour.
 
 ---
 
@@ -147,8 +161,17 @@ Optional overrides:
 python plot_forwtraj.py forward_run.pkl \
   --height-figure plume_height_colored_replot.png \
   --age-figure plume_age_colored_replot.png \
-  --seeds-vertical-figure seeds_vertical_replot.png
+  --seeds-vertical-figure seeds_vertical_replot.png \
+  --hourly-figures \
+  --hourly-prefix parcel_positions_hour_ \
+  --hourly-output-dir ./hourly_maps_replot
 ```
+
+Replot helper options now include:
+
+- `--hourly-figures` to regenerate hourly parcel-location maps from the saved state.
+- `--hourly-prefix` to control output filename prefix.
+- `--hourly-output-dir` to control where hourly images are written.
 
 ---
 
@@ -215,6 +238,23 @@ python plume_forwtraj.py \
   --aer-type sulf
 ```
 
+### Hourly snapshot output
+
+```bash
+python plume_forwtraj.py \
+  --wrfout wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --z-min 1000 \
+  --z-max 23000 \
+  --n-vert 30 \
+  --hourly-figures \
+  --hourly-prefix parcel_positions_hour_ \
+  --hourly-output-dir ./hourly_maps
+```
+
 ---
 
 ## 7. Notes on Input Data
@@ -222,6 +262,7 @@ python plume_forwtraj.py \
 - Make sure all WRF files are on the same grid (same `XLAT/XLONG`, `DX/DY`, and map factors).
 - When using multiple WRF files, pass them in chronological order or use a wildcard that sorts in time.
 - `--start-time` and `--end-time` must fall inside the WRF time range; the script uses the closest available WRF times.
+- No timezone conversion is applied to CLI time strings; pass times in the same basis as WRF `Times` (normally UTC).
 
 ---
 

@@ -2,6 +2,7 @@ import argparse
 import warnings
 import pickle
 from glob import glob
+from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
@@ -10,6 +11,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import BoundaryNorm
 import numpy as np
 import cartopy.crs as ccrs
+from netCDF4 import Dataset
 from scipy.interpolate import RegularGridInterpolator
 
 ''' 
@@ -31,6 +33,7 @@ python plume_forwtraj.py \
   --age-figure plume_age_colored.png \
   --height-figure plume_height_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
+  --hourly-figures \
   --state-pickle forward_run.pkl \
   --map-extent 30 5 65 30 \
   --figure-dpi 300
@@ -63,6 +66,76 @@ def _parse_time_arg(time_str):
     if "T" not in s and "_" in s:
         s = s.replace("_", "T")
     return np.datetime64(s)
+
+
+def _decode_wrf_time_charrow(row):
+    """Decode one WRF Times char row into np.datetime64."""
+    if hasattr(row, "tobytes"):
+        t_str = row.tobytes().decode("ascii").strip()
+    else:
+        t_str = bytes(row).decode("ascii").strip()
+    return np.datetime64(t_str.replace("_", "T"))
+
+
+def _read_wrf_time_bounds(path):
+    """Read first/last WRF timestamp from a file without loading wind fields."""
+    with Dataset(path, "r") as ds:
+        if "Times" not in ds.variables:
+            raise ValueError(f"File '{path}' does not contain WRF Times.")
+        tvar = ds.variables["Times"]
+        if tvar.shape[0] < 1:
+            raise ValueError(f"File '{path}' has an empty Times dimension.")
+        t0 = _decode_wrf_time_charrow(tvar[0])
+        t1 = _decode_wrf_time_charrow(tvar[tvar.shape[0] - 1])
+    if t1 < t0:
+        t0, t1 = t1, t0
+    return t0, t1
+
+
+def _filter_wrfout_paths_by_time(wrfout_paths, start_time_dt, end_time_dt):
+    """
+    Keep only files that overlap the requested time window.
+
+    Includes one neighboring file before/after the overlap block (when available)
+    so nearest-time snapping at the window edges remains robust.
+    """
+    file_meta = []
+    for path in wrfout_paths:
+        t0, t1 = _read_wrf_time_bounds(path)
+        file_meta.append((path, t0, t1))
+
+    overlap_idx = [
+        idx
+        for idx, (_, t0, t1) in enumerate(file_meta)
+        if (t1 >= start_time_dt and t0 <= end_time_dt)
+    ]
+    if not overlap_idx:
+        raise ValueError(
+            "No WRF files overlap the requested time window "
+            f"[{start_time_dt}, {end_time_dt}]."
+        )
+
+    keep_idx = set(overlap_idx)
+    first = min(overlap_idx)
+    last = max(overlap_idx)
+    if first > 0:
+        keep_idx.add(first - 1)
+    if last < len(file_meta) - 1:
+        keep_idx.add(last + 1)
+
+    keep_idx_sorted = sorted(keep_idx)
+    selected_paths = [file_meta[idx][0] for idx in keep_idx_sorted]
+
+    _diag(
+        "WRF file filter by requested window "
+        f"[{_format_time_str(start_time_dt)}, {_format_time_str(end_time_dt)}]: "
+        f"keeping {len(selected_paths)}/{len(wrfout_paths)} file(s)."
+    )
+    for idx in keep_idx_sorted:
+        path, t0, t1 = file_meta[idx]
+        _diag(f"  keep: {path}  ({_format_time_str(t0)} -> {_format_time_str(t1)})")
+
+    return selected_paths
 
 
 def _combine_wrf_outputs(wrfout_paths):
@@ -894,6 +967,150 @@ def plot_trajectories_by_age(
     return True
 
 
+def plot_hourly_parcel_snapshots(
+    xlat,
+    xlon,
+    trajectory_i,
+    trajectory_j,
+    trajectory_active,
+    trajectory_times_sec,
+    out_dir,
+    prefix="parcel_positions_hour_",
+    height_hist_m=None,
+    figure_dpi=200,
+    seed_bbox=None,
+    source_lat=None,
+    source_lon=None,
+    map_extent=None,
+    trajectory_times_utc=None,
+):
+    """Save parcel-location maps at each whole hour since release."""
+    traj_i = np.asarray(trajectory_i, dtype=float)
+    traj_j = np.asarray(trajectory_j, dtype=float)
+    active_hist = np.asarray(trajectory_active, dtype=bool)
+    traj_times = np.asarray(trajectory_times_sec, dtype=float)
+    traj_times_utc_arr = None
+    if trajectory_times_utc is not None:
+        traj_times_utc_arr = np.asarray(trajectory_times_utc)
+        if traj_times_utc_arr.shape != traj_times.shape:
+            traj_times_utc_arr = None
+    if traj_i.ndim != 2 or traj_j.ndim != 2 or traj_i.shape != traj_j.shape:
+        raise ValueError("trajectory_i and trajectory_j must be 2-D arrays with matching shape.")
+    if active_hist.shape != traj_i.shape:
+        raise ValueError("trajectory_active must match trajectory_i shape.")
+    if traj_times.ndim != 1 or traj_times.size != traj_i.shape[0]:
+        raise ValueError("trajectory_times_sec must be 1-D with one entry per trajectory snapshot.")
+
+    if traj_times.size == 0:
+        return 0
+
+    age_hours = (traj_times - traj_times[0]) / 3600.0
+    max_age = float(np.nanmax(age_hours))
+    if not np.isfinite(max_age):
+        return 0
+
+    max_hour = max(0, int(np.floor(max_age + 1e-9)))
+    target_hours = np.arange(0, max_hour + 1, dtype=int)
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
+    heights_km = None
+    hmin = None
+    hmax = None
+    if height_hist_m is not None:
+        heights_km = np.asarray(height_hist_m, dtype=float) / 1000.0
+        if heights_km.shape != traj_i.shape:
+            heights_km = None
+        elif np.isfinite(heights_km).any():
+            hmin = float(np.nanmin(heights_km))
+            hmax = float(np.nanmax(heights_km))
+            if np.isclose(hmin, hmax):
+                hmax = hmin + 0.05
+        else:
+            heights_km = None
+
+    saved = 0
+    for hour in target_hours:
+        snap_idx = int(np.argmin(np.abs(age_hours - float(hour))))
+        active_mask = active_hist[snap_idx]
+
+        fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+        if active_mask.any():
+            lons = lon_hist[snap_idx, active_mask]
+            lats = lat_hist[snap_idx, active_mask]
+            valid_ll = np.isfinite(lons) & np.isfinite(lats)
+            if heights_km is not None:
+                hvals = heights_km[snap_idx, active_mask]
+                valid = valid_ll & np.isfinite(hvals)
+                if valid.any():
+                    sc = ax.scatter(
+                        lons[valid],
+                        lats[valid],
+                        c=hvals[valid],
+                        cmap="rainbow",
+                        vmin=hmin,
+                        vmax=hmax,
+                        s=10.0,
+                        alpha=0.85,
+                        edgecolors="none",
+                        transform=ccrs.PlateCarree(),
+                        zorder=6,
+                    )
+                    cb = fig.colorbar(sc, ax=ax, orientation="vertical", shrink=0.74, pad=0.02)
+                    cb.set_label("Height (km)")
+            else:
+                if valid_ll.any():
+                    ax.scatter(
+                        lons[valid_ll],
+                        lats[valid_ll],
+                        s=10.0,
+                        c="deepskyblue",
+                        alpha=0.85,
+                        edgecolors="none",
+                        transform=ccrs.PlateCarree(),
+                        zorder=6,
+                    )
+
+        if source_lat is not None and source_lon is not None:
+            ax.scatter(
+                source_lon,
+                source_lat,
+                marker="^",
+                s=80,
+                c="red",
+                edgecolors="black",
+                linewidths=0.4,
+                zorder=7,
+                transform=ccrs.PlateCarree(),
+            )
+
+        _plot_seed_bbox(ax, seed_bbox)
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+        if traj_times_utc_arr is not None:
+            snapshot_utc = traj_times_utc_arr[snap_idx]
+            if np.issubdtype(traj_times_utc_arr.dtype, np.datetime64):
+                utc_label = str(snapshot_utc.astype("datetime64[s]"))
+            else:
+                utc_label = str(snapshot_utc)
+            ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
+        else:
+            age_actual = float(age_hours[snap_idx])
+            ax.set_title(
+                f"Parcel positions at +{hour:02d} h "
+                f"(nearest snapshot: +{age_actual:.2f} h)"
+            )
+
+        out_path = out_dir / f"{prefix}{hour:03d}.png"
+        fig.savefig(out_path, dpi=figure_dpi)
+        plt.close(fig)
+        saved += 1
+
+    return saved
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Forward-advect parcels from a source column in WRF winds."
@@ -907,12 +1124,20 @@ def parse_args():
     parser.add_argument(
         "--start-time",
         required=True,
-        help="UTC start time for forward trajectories (e.g., 2021-04-10T15:00:00).",
+        help=(
+            "UTC start time for forward trajectories "
+            "(e.g., 2021-04-10T15:00:00). No timezone conversion is applied; "
+            "the value must use the same time basis as WRF Times (normally UTC)."
+        ),
     )
     parser.add_argument(
         "--end-time",
         required=True,
-        help="UTC end time for forward trajectories (e.g., 2021-04-10T21:00:00).",
+        help=(
+            "UTC end time for forward trajectories "
+            "(e.g., 2021-04-10T21:00:00). No timezone conversion is applied; "
+            "the value must use the same time basis as WRF Times (normally UTC)."
+        ),
     )
     parser.add_argument(
         "--source-lat",
@@ -989,6 +1214,24 @@ def parse_args():
         help="Optional PNG for the initial vertical distribution of parcels.",
     )
     parser.add_argument(
+        "--hourly-figures",
+        action="store_true",
+        help=(
+            "Save parcel-location maps at each whole hour since release. "
+            "Each map uses the nearest available trajectory snapshot."
+        ),
+    )
+    parser.add_argument(
+        "--hourly-prefix",
+        default="parcel_positions_hour_",
+        help="Filename prefix for hourly snapshot images.",
+    )
+    parser.add_argument(
+        "--hourly-output-dir",
+        default=".",
+        help="Output directory for hourly snapshot images.",
+    )
+    parser.add_argument(
         "--figure-dpi",
         type=int,
         default=200,
@@ -1032,6 +1275,8 @@ def main(args):
 
     if start_time_dt >= end_time_dt:
         raise ValueError("--end-time must be later than --start-time.")
+
+    wrfout_paths = _filter_wrfout_paths_by_time(wrfout_paths, start_time_dt, end_time_dt)
 
     grid = _combine_wrf_outputs(wrfout_paths)
     xlat = grid["xlat"]
@@ -1155,6 +1400,39 @@ def main(args):
 
     fig_dpi = max(50, int(args.figure_dpi))
     map_extent = tuple(args.map_extent) if args.map_extent is not None else None
+    seed_bbox = tuple(args.seed_bbox) if args.seed_bbox is not None else None
+    if args.hourly_figures:
+        traj_times_utc = None
+        if np.asarray(times_arr).dtype.kind == "M":
+            t_ref_utc = np.asarray(times_arr).astype("datetime64[s]")[0]
+            traj_seconds = np.rint(np.asarray(result["trajectory_times"], dtype=float)).astype(
+                np.int64
+            )
+            traj_times_utc = t_ref_utc + traj_seconds.astype("timedelta64[s]")
+
+        n_hourly = plot_hourly_parcel_snapshots(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=result["trajectory_i"],
+            trajectory_j=result["trajectory_j"],
+            trajectory_active=result["trajectory_active"],
+            trajectory_times_sec=result["trajectory_times"],
+            out_dir=args.hourly_output_dir,
+            prefix=args.hourly_prefix,
+            height_hist_m=height_hist,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=args.source_lat,
+            source_lon=args.source_lon,
+            map_extent=map_extent,
+            trajectory_times_utc=traj_times_utc,
+        )
+        print(
+            "[diag] Hourly snapshots saved: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+            f"with prefix '{args.hourly_prefix}'."
+        )
+
     saved_height = plot_trajectories_by_height(
         xlat=xlat,
         xlon=xlon,
@@ -1166,7 +1444,7 @@ def main(args):
         height_min=args.z_min,
         height_max=args.z_max,
         figure_dpi=fig_dpi,
-        seed_bbox=args.seed_bbox,
+        seed_bbox=seed_bbox,
         source_lat=args.source_lat,
         source_lon=args.source_lon,
         map_extent=map_extent,
@@ -1183,7 +1461,7 @@ def main(args):
         trajectory_times_sec=result["trajectory_times"],
         out_path=args.age_figure,
         figure_dpi=fig_dpi,
-        seed_bbox=args.seed_bbox,
+        seed_bbox=seed_bbox,
         source_lat=args.source_lat,
         source_lon=args.source_lon,
         map_extent=map_extent,
