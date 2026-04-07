@@ -1,0 +1,12 @@
+name: plume-traj
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10,<3.13
+  - numpy
+  - scipy
+  - netcdf4
+  - matplotlib
+  - cartopy
+  - xarray
+  - pip
