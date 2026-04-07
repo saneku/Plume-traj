@@ -56,6 +56,7 @@ A NetCDF file containing the SO₂ column field.
 - Variable name: by default `SO2_COLUMN` (changeable via `--column-var`)
 
 If the column field has a time dimension, the script uses the time index matching the chosen WRF start time (the closest WRF output to `--start-time`, which must fall inside the WRF time range). If the column file is shorter, the last available column time is used instead.
+Time strings are not timezone-converted by the script; they must use the same basis as WRF `Times` (normally UTC).
 
 ---
 
@@ -115,7 +116,8 @@ Full argument list:
   Sub-step (seconds) used for backward advection between two consecutive WRF output times. Leave at the native WRF time step for best fidelity.
 
 - `--start-time` (optional, string)
-  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`. Must fall within the WRF time range; the script uses the closest WRF output time (and warns if it is more than 1 minute away). If not provided, the last time step from the WRF file is used.
+  UTC start time for back-trajectories, e.g. `2021-04-10T15:00:00` or `2021-04-10_15:00:00`.  
+  No timezone conversion is applied by the script; the value must use the same time basis as WRF `Times` (normally UTC). Must fall within the WRF time range; the script uses the closest WRF output time (and warns if it is more than 1 minute away). If not provided, the last time step from the WRF file is used.
 
 - `--aer-type` (optional)
   Aerosol type for gravitational settling (e.g., `sulf`, `ash1`, etc.). If provided, applies a size-dependent settling velocity to parcels during advection.
@@ -176,9 +178,11 @@ Full argument list:
   UTC start time of emission/eruption, e.g.:
   - `2021-04-10T15:00:00` or
   - `2021-04-10_15:00:00`  
+  No timezone conversion is applied by the script; the value must use the same time basis as WRF `Times` (normally UTC).  
   Backward advection stops at this time, and all arrival times are measured relative to it.
 
 - `--emission-end` (optional, string)  
+  No timezone conversion is applied by the script; the value must use the same time basis as WRF `Times` (normally UTC).  
   UTC end time of the eruption/emission. When supplied together with `--emission-start`, the emission matrix uses fixed time bins spanning this window and discards arrivals outside it.
 
 - `--efolding-days` (optional, float)

@@ -2504,6 +2504,8 @@ def parse_args():
         help=(
             "UTC start time for back-trajectories, "
             "e.g. 2021-04-10T15:00:00 or 2021-04-10_15:00:00. "
+            "No timezone conversion is applied; the value must use the same "
+            "time basis as WRF Times (normally UTC). "
             "If not provided, the last time step from the WRF file is used."
         ),
     )
@@ -2616,6 +2618,8 @@ def parse_args():
         help=(
             "UTC start time of emission, "
             "e.g. 2021-04-10T15:00:00 or 2021-04-10_15:00:00. "
+            "No timezone conversion is applied; the value must use the same "
+            "time basis as WRF Times (normally UTC). "
             "Advection stops at this time, and emission times are "
             "reported relative to it."
         ),
@@ -2626,6 +2630,8 @@ def parse_args():
         default=None,
         help=(
             "UTC end time of emission (same format as --emission-start). "
+            "No timezone conversion is applied; the value must use the same "
+            "time basis as WRF Times (normally UTC). "
             "Used to define fixed time bins and ignore arrivals after emission ceased."
         ),
     )
