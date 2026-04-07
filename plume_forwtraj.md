@@ -115,9 +115,6 @@ Full argument list:
 - `--hourly-figures` (optional flag)  
   Save parcel-location maps at each whole hour since release.
 
-- `--hourly-prefix` (default: `parcel_positions_hour_`)  
-  Filename prefix for hourly snapshot images.
-
 - `--hourly-output-dir` (default: `.`)  
   Output directory for hourly snapshot images.
 
@@ -163,14 +160,12 @@ python plot_forwtraj.py forward_run.pkl \
   --age-figure plume_age_colored_replot.png \
   --seeds-vertical-figure seeds_vertical_replot.png \
   --hourly-figures \
-  --hourly-prefix parcel_positions_hour_ \
   --hourly-output-dir ./hourly_maps_replot
 ```
 
 Replot helper options now include:
 
 - `--hourly-figures` to regenerate hourly parcel-location maps from the saved state.
-- `--hourly-prefix` to control output filename prefix.
 - `--hourly-output-dir` to control where hourly images are written.
 
 ---
@@ -251,7 +246,6 @@ python plume_forwtraj.py \
   --z-max 23000 \
   --n-vert 30 \
   --hourly-figures \
-  --hourly-prefix parcel_positions_hour_ \
   --hourly-output-dir ./hourly_maps
 ```
 

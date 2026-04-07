@@ -53,11 +53,6 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--hourly-prefix",
-        default="parcel_positions_hour_",
-        help="Filename prefix for hourly snapshot images.",
-    )
-    parser.add_argument(
         "--hourly-output-dir",
         default=".",
         help="Output directory for hourly snapshot images.",
@@ -135,7 +130,6 @@ def main():
             trajectory_active=trajectories["active"],
             trajectory_times_sec=trajectories["times"],
             out_dir=args.hourly_output_dir,
-            prefix=args.hourly_prefix,
             height_hist_m=height_hist,
             figure_dpi=fig_dpi,
             seed_bbox=seed_bbox,
@@ -147,7 +141,7 @@ def main():
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            f"with prefix '{args.hourly_prefix}'."
+            "using 'parcel_positions_hour_XXX.png' naming."
         )
 
     plot_trajectories_by_height(
@@ -158,8 +152,8 @@ def main():
         trajectory_active=trajectories["active"],
         height_hist_m=height_hist,
         out_path=args.height_figure,
-        height_min=z_min,
-        height_max=z_max,
+        height_min=None,
+        height_max=None,
         figure_dpi=fig_dpi,
         seed_bbox=seed_bbox,
         source_lat=source_lat,

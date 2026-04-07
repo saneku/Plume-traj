@@ -975,7 +975,6 @@ def plot_hourly_parcel_snapshots(
     trajectory_active,
     trajectory_times_sec,
     out_dir,
-    prefix="parcel_positions_hour_",
     height_hist_m=None,
     figure_dpi=200,
     seed_bbox=None,
@@ -1019,6 +1018,11 @@ def plot_hourly_parcel_snapshots(
     heights_km = None
     hmin = None
     hmax = None
+    n_bins = 10
+    h_bins_km = None
+    cmap_height = None
+    norm_height = None
+    height_centers = None
     if height_hist_m is not None:
         heights_km = np.asarray(height_hist_m, dtype=float) / 1000.0
         if heights_km.shape != traj_i.shape:
@@ -1028,6 +1032,10 @@ def plot_hourly_parcel_snapshots(
             hmax = float(np.nanmax(heights_km))
             if np.isclose(hmin, hmax):
                 hmax = hmin + 0.05
+            h_bins_km = np.linspace(hmin, hmax, n_bins + 1)
+            cmap_height = plt.get_cmap("rainbow", n_bins)
+            norm_height = BoundaryNorm(h_bins_km, cmap_height.N)
+            height_centers = h_bins_km[:-1] + 0.5 * np.diff(h_bins_km)
         else:
             heights_km = None
 
@@ -1045,21 +1053,18 @@ def plot_hourly_parcel_snapshots(
                 hvals = heights_km[snap_idx, active_mask]
                 valid = valid_ll & np.isfinite(hvals)
                 if valid.any():
-                    sc = ax.scatter(
+                    ax.scatter(
                         lons[valid],
                         lats[valid],
                         c=hvals[valid],
-                        cmap="rainbow",
-                        vmin=hmin,
-                        vmax=hmax,
+                        cmap=cmap_height,
+                        norm=norm_height,
                         s=10.0,
                         alpha=0.85,
                         edgecolors="none",
                         transform=ccrs.PlateCarree(),
                         zorder=6,
                     )
-                    cb = fig.colorbar(sc, ax=ax, orientation="vertical", shrink=0.74, pad=0.02)
-                    cb.set_label("Height (km)")
             else:
                 if valid_ll.any():
                     ax.scatter(
@@ -1103,7 +1108,21 @@ def plot_hourly_parcel_snapshots(
                 f"(nearest snapshot: +{age_actual:.2f} h)"
             )
 
-        out_path = out_dir / f"{prefix}{hour:03d}.png"
+        if heights_km is not None:
+            cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+            sm = plt.cm.ScalarMappable(cmap=cmap_height, norm=norm_height)
+            sm.set_array([])
+            cb = plt.colorbar(
+                sm,
+                cax=cax,
+                orientation="horizontal",
+                boundaries=h_bins_km,
+                ticks=height_centers,
+            )
+            cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
+            cb.set_label("Height (km)")
+
+        out_path = out_dir / f"parcel_positions_hour_{hour:03d}.png"
         fig.savefig(out_path, dpi=figure_dpi)
         plt.close(fig)
         saved += 1
@@ -1220,11 +1239,6 @@ def parse_args():
             "Save parcel-location maps at each whole hour since release. "
             "Each map uses the nearest available trajectory snapshot."
         ),
-    )
-    parser.add_argument(
-        "--hourly-prefix",
-        default="parcel_positions_hour_",
-        help="Filename prefix for hourly snapshot images.",
     )
     parser.add_argument(
         "--hourly-output-dir",
@@ -1418,7 +1432,6 @@ def main(args):
             trajectory_active=result["trajectory_active"],
             trajectory_times_sec=result["trajectory_times"],
             out_dir=args.hourly_output_dir,
-            prefix=args.hourly_prefix,
             height_hist_m=height_hist,
             figure_dpi=fig_dpi,
             seed_bbox=seed_bbox,
@@ -1430,7 +1443,7 @@ def main(args):
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            f"with prefix '{args.hourly_prefix}'."
+            "using 'parcel_positions_hour_XXX.png' naming."
         )
 
     saved_height = plot_trajectories_by_height(
@@ -1441,8 +1454,8 @@ def main(args):
         trajectory_active=result["trajectory_active"],
         height_hist_m=height_hist,
         out_path=args.height_figure,
-        height_min=args.z_min,
-        height_max=args.z_max,
+        height_min=None,
+        height_max=None,
         figure_dpi=fig_dpi,
         seed_bbox=seed_bbox,
         source_lat=args.source_lat,

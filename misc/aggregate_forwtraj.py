@@ -17,6 +17,8 @@ python misc/aggregate_forwtraj.py \
   --height-figure plume_height_colored_aggregate.png \
   --age-figure plume_age_colored_aggregate.png \
   --seeds-vertical-figure seeds_vertical_aggregate.png \
+  --hourly-figures \
+  --hourly-output-dir ./hourly_maps_aggregate \
   --map-extent 30 5 65 30
 '''
 
@@ -24,6 +26,7 @@ python misc/aggregate_forwtraj.py \
 from plume_forwtraj import (
     plot_trajectories_by_height,
     plot_trajectories_by_age,
+    plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
 
@@ -52,11 +55,30 @@ def parse_args():
         help="Optional PNG for the initial vertical distribution of parcels.",
     )
     parser.add_argument(
+        "--hourly-figures",
+        action="store_true",
+        help=(
+            "Save parcel-location maps at each whole hour since release. "
+            "Each map uses the nearest available trajectory snapshot."
+        ),
+    )
+    parser.add_argument(
+        "--hourly-output-dir",
+        default=".",
+        help="Output directory for hourly snapshot images.",
+    )
+    parser.add_argument(
         "--map-extent",
         nargs=4,
         type=float,
         metavar=("WEST", "SOUTH", "EAST", "NORTH"),
         help="Optional map extent override (west/south/east/north bounds) for all plots.",
+    )
+    parser.add_argument(
+        "--figure-dpi",
+        type=int,
+        default=None,
+        help="Optional DPI override for all saved figures.",
     )
     return parser.parse_args()
 
@@ -152,11 +174,17 @@ def main():
 
     xlat = np.asarray(grid["xlat"])
     xlon = np.asarray(grid["xlon"])
+    height_hist = trajectories.get("height_hist_m")
+    if height_hist is None:
+        raise ValueError("Aggregated trajectories do not contain height history.")
     seed_bbox = script_args.get("seed_bbox")
     if seed_bbox is not None:
         seed_bbox = tuple(seed_bbox)
 
-    fig_dpi = int(script_args.get("figure_dpi", 200))
+    if args.figure_dpi is not None:
+        fig_dpi = max(50, int(args.figure_dpi))
+    else:
+        fig_dpi = max(50, int(script_args.get("figure_dpi", 200)))
     z_min = script_args.get("z_min")
     z_max = script_args.get("z_max")
     source_lat = script_args.get("source_lat")
@@ -168,16 +196,51 @@ def main():
         if map_extent is not None:
             map_extent = tuple(map_extent)
 
+    if args.hourly_figures:
+        traj_times_utc = None
+        start_time_utc = state.get("metadata", {}).get("start_time")
+        if start_time_utc is not None:
+            try:
+                t0 = np.datetime64(start_time_utc).astype("datetime64[s]")
+                traj_seconds = np.rint(np.asarray(trajectories["times"], dtype=float)).astype(
+                    np.int64
+                )
+                traj_times_utc = t0 + traj_seconds.astype("timedelta64[s]")
+            except Exception:
+                traj_times_utc = None
+
+        n_hourly = plot_hourly_parcel_snapshots(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=trajectories["i"],
+            trajectory_j=trajectories["j"],
+            trajectory_active=trajectories["active"],
+            trajectory_times_sec=trajectories["times"],
+            out_dir=args.hourly_output_dir,
+            height_hist_m=height_hist,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+            trajectory_times_utc=traj_times_utc,
+        )
+        print(
+            "[diag] Hourly snapshots saved: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+            "using 'parcel_positions_hour_XXX.png' naming."
+        )
+
     plot_trajectories_by_height(
         xlat=xlat,
         xlon=xlon,
         trajectory_i=trajectories["i"],
         trajectory_j=trajectories["j"],
         trajectory_active=trajectories["active"],
-        height_hist_m=trajectories["height_hist_m"],
+        height_hist_m=height_hist,
         out_path=args.height_figure,
-        height_min=z_min,
-        height_max=z_max,
+        height_min=None,
+        height_max=None,
         figure_dpi=fig_dpi,
         seed_bbox=seed_bbox,
         source_lat=source_lat,

@@ -47,7 +47,7 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 
 ## Output Files
 
-The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. In forward mode, `--hourly-figures` saves hourly parcel-location maps (`parcel_positions_hour_XXX.png` by default; customizable via `--hourly-prefix` and `--hourly-output-dir`). Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
+The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. In forward mode, `--hourly-figures` saves hourly parcel-location maps named `parcel_positions_hour_XXX.png` (output location controlled by `--hourly-output-dir`). Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
 
 ## Misc Utilities
 
