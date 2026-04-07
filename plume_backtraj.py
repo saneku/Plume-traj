@@ -2511,7 +2511,11 @@ def parse_args():
         "--aer-type",
         choices=sorted(SETTLING_VEL_MS.keys()),
         default=None,
-        help="Optional aerosol type for gravitational settling (keys from SETTLING_VEL_MS).",
+        help=(
+            "Optional aerosol type for gravitational settling "
+            "(keys from SETTLING_VEL_MS). If omitted, parcels are treated as "
+            "passive tracers with no gravitational settling."
+        ),
     )
     parser.add_argument(
         "--hourly-figures",
@@ -2629,9 +2633,26 @@ def parse_args():
         "--efolding-days",
         type=float,
         default=None,
-        help="e-folding time for mass decay in days. If set, mass is increased backwards in time.",
+        help=(
+            "e-folding lifetime tau [days] for mass-decay correction. "
+            "If set, backward correction uses exp(age_seconds / tau_seconds). "
+            "This is not half-life (t_half = tau * ln(2))."
+        ),
     )
+    _annotate_optionality(parser)
     return parser.parse_args()
+
+
+def _annotate_optionality(parser):
+    """Prefix each CLI option help with Required./Optional. for clarity."""
+    for action in parser._actions:
+        if action.dest == "help" or not action.option_strings:
+            continue
+        help_text = action.help or ""
+        if help_text.startswith(("Required.", "Optional.", "Conditionally required.")):
+            continue
+        prefix = "Required." if getattr(action, "required", False) else "Optional."
+        action.help = f"{prefix} {help_text}".strip()
 
 
 def main(args):

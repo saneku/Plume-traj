@@ -9,7 +9,8 @@ python plot_forwtraj.py forward_run.pkl \
   --height-figure my_height.png \
   --age-figure my_age.png \
   --seeds-vertical-figure seeds_vertical.png \
-  --map-extent 30 5 65 30 
+  --map-extent 30 5 65 30 \
+  --figure-dpi 300
 '''
 
 from plume_forwtraj import (
@@ -49,6 +50,12 @@ def parse_args():
         metavar=("WEST", "SOUTH", "EAST", "NORTH"),
         help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
+    parser.add_argument(
+        "--figure-dpi",
+        type=int,
+        default=None,
+        help="Optional DPI override for all saved figures.",
+    )
     return parser.parse_args()
 
 
@@ -73,7 +80,10 @@ def main():
     if seed_bbox is not None:
         seed_bbox = tuple(seed_bbox)
 
-    fig_dpi = int(script_args.get("figure_dpi", 200))
+    if args.figure_dpi is not None:
+        fig_dpi = max(50, int(args.figure_dpi))
+    else:
+        fig_dpi = max(50, int(script_args.get("figure_dpi", 200)))
     z_min = script_args.get("z_min")
     z_max = script_args.get("z_max")
     source_lat = script_args.get("source_lat")

@@ -32,7 +32,8 @@ python plume_forwtraj.py \
   --height-figure plume_height_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
   --state-pickle forward_run.pkl \
-  --map-extent 30 5 65 30 
+  --map-extent 30 5 65 30 \
+  --figure-dpi 300
   ##--seed-bbox 40.0 10.0 50.1 20.1 --n-columns 25 \
   
   
@@ -917,13 +918,13 @@ def parse_args():
         "--source-lat",
         type=float,
         default=None,
-        help="Source latitude for the release column [deg].",
+        help="Conditionally required unless --seed-bbox is provided. Source latitude for the release column [deg].",
     )
     parser.add_argument(
         "--source-lon",
         type=float,
         default=None,
-        help="Source longitude for the release column [deg].",
+        help="Conditionally required unless --seed-bbox is provided. Source longitude for the release column [deg].",
     )
     parser.add_argument(
         "--seed-bbox",
@@ -966,7 +967,11 @@ def parse_args():
         "--aer-type",
         choices=sorted(SETTLING_VEL_MS.keys()),
         default=None,
-        help="Optional aerosol type for gravitational settling (keys from SETTLING_VEL_MS).",
+        help=(
+            "Optional aerosol type for gravitational settling "
+            "(keys from SETTLING_VEL_MS). If omitted, parcels are treated as "
+            "passive tracers with no gravitational settling."
+        ),
     )
     parser.add_argument(
         "--height-figure",
@@ -1001,7 +1006,20 @@ def parse_args():
         default=None,
         help="Optional path to store a pickle with inputs/results for re-plotting.",
     )
+    _annotate_optionality(parser)
     return parser.parse_args()
+
+
+def _annotate_optionality(parser):
+    """Prefix each CLI option help with Required./Optional. for clarity."""
+    for action in parser._actions:
+        if action.dest == "help" or not action.option_strings:
+            continue
+        help_text = action.help or ""
+        if help_text.startswith(("Required.", "Optional.", "Conditionally required.")):
+            continue
+        prefix = "Required." if getattr(action, "required", False) else "Optional."
+        action.help = f"{prefix} {help_text}".strip()
 
 
 def main(args):
