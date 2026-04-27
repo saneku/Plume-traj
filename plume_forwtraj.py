@@ -17,10 +17,10 @@ from scipy.interpolate import RegularGridInterpolator
 ''' 
 Example usage:
 
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-_*'
+INPUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-_*'
 
 python plume_forwtraj.py \
-  --wrfout "$WRFOUT" \
+  --input "$INPUT" \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --aer-type sulf \
@@ -200,9 +200,9 @@ def _combine_wrf_outputs(wrfout_paths):
     )
 
 
-def _expand_wrfout_paths(wrfout_args):
+def _expand_wrfout_paths(input_args):
     expanded = []
-    for entry in wrfout_args:
+    for entry in input_args:
         if any(ch in entry for ch in ["*", "?", "["]):
             matches = sorted(glob(entry))
             expanded.extend(matches)
@@ -1369,10 +1369,10 @@ def parse_args():
         description="Forward-advect parcels from a source column in WRF winds."
     )
     parser.add_argument(
-        "--wrfout",
+        "--input",
         nargs="+",
         required=True,
-        help="One or more WRF output files (ordered in time). Wildcards are supported.",
+        help="One or more input files (ordered in time). Wildcards are supported.",
     )
     parser.add_argument(
         "--start-time",
@@ -1522,7 +1522,7 @@ def _annotate_optionality(parser):
 
 
 def main(args):
-    wrfout_paths = _expand_wrfout_paths(args.wrfout)
+    wrfout_paths = _expand_wrfout_paths(args.input)
     start_time_dt = _parse_time_arg(args.start_time)
     end_time_dt = _parse_time_arg(args.end_time)
 

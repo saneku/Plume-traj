@@ -34,7 +34,7 @@ pip install numpy netCDF4 scipy
 
 ## 2. Required Inputs
 
-### 2.1 WRF output (`--wrfout`)
+### 2.1 WRF output (`--input`)
 
 One or more WRF NetCDF files (ordered in time) with at least:
 
@@ -50,7 +50,7 @@ The script destaggers winds, computes cell-center heights and layer thickness (`
 
 A NetCDF file containing the SO₂ column field.
 
-**Important:** The column data must be regridded onto the exact same horizontal grid as the `--wrfout` file. The script expects matching `(south_north, west_east)` dimensions.
+**Important:** The column data must be regridded onto the exact same horizontal grid as the `--input` file. The script expects matching `(south_north, west_east)` dimensions.
 
 - Dimensions: `(time, south_north, west_east)` or `(south_north, west_east)`
 - Variable name: by default `SO2_COLUMN` (changeable via `--column-var`)
@@ -65,12 +65,12 @@ Time strings are not timezone-converted by the script; they must use the same ba
 Run the script with:
 
 ```bash
-python plume_backtraj.py --wrfout WRFOUT.nc --column SO2_COLUMN.nc --receptor-lat 45.0 --receptor-lon 10.0
+python plume_backtraj.py --input WRFOUT.nc --column SO2_COLUMN.nc --receptor-lat 45.0 --receptor-lon 10.0
 ```
 
 Full argument list:
 
-- `--wrfout` (required, one or more)  
+- `--input` (required, one or more)  
   One or more WRF output files (ordered in time). Wildcards are supported.
 
 - `--column` (required)  
@@ -326,7 +326,7 @@ Minimal back-trajectory run:
 
 ```bash
 python plume_backtraj.py \
-  --wrfout wrfout_d01_2021-04-10_18:00:00.nc \
+  --input wrfout_d01_2021-04-10_18:00:00.nc \
   --column so2_column_on_wrf_grid.nc \
   --receptor-lat 45.0 \
   --receptor-lon 10.0
@@ -336,7 +336,7 @@ Example usage for a volcano at 45°N, 10°E, 10 km receptor radius, 1‑hour tim
 
 ```bash
 python plume_backtraj.py \
-  --wrfout wrfout_d01_2021-04-10_18:00:00.nc \
+  --input wrfout_d01_2021-04-10_18:00:00.nc \
   --start-time '2021-04-10T18:00:00' \
   --column so2_column_on_wrf_grid.nc \
   --column-var SO2_COLUMN \

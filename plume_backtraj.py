@@ -28,7 +28,7 @@ from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 '''
 Example usage:
 
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
+INPUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
 COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
 COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 
@@ -37,7 +37,7 @@ COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 outdir="./so2_run"
 mkdir -p "$outdir"
 python plume_backtraj.py \
- --wrfout "$WRFOUT" \
+ --input "$INPUT" \
  --start-time '2025-11-24T11:00:00' \
  --column "$COLUMN" --integration-dt 15\
  --efolding-days 35 \
@@ -62,7 +62,7 @@ python plume_backtraj.py \
 
 
 #Aerosols
-WRFOUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
+INPUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
 COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc'
 COLUMN_VAR='aerosol_index_354_388'
 
@@ -71,7 +71,7 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
     mkdir -p "$outdir"
     echo " "
     python plume_backtraj.py \
-        --wrfout "$WRFOUT" \
+        --input "$INPUT" \
         --aer-type "$aer" \
         --start-time '2025-11-24T10:00:00' \
         --column "$COLUMN" --integration-dt 15 \
@@ -117,9 +117,9 @@ def _diag(msg: str) -> None:
     print(f"[diag] {msg}")
 
 
-def _expand_wrfout_paths(wrfout_args):
+def _expand_wrfout_paths(input_args):
     expanded = []
-    for entry in wrfout_args:
+    for entry in input_args:
         if any(ch in entry for ch in ["*", "?", "["]):
             matches = sorted(glob(entry))
             expanded.extend(matches)
@@ -2397,10 +2397,10 @@ def parse_args():
         description="Back-advect SO2 plume parcels in WRF winds."
     )
     parser.add_argument(
-        "--wrfout",
+        "--input",
         nargs="+",
         required=True,
-        help="One or more WRF output files (ordered in time). Wildcards are supported.",
+        help="One or more input files (ordered in time). Wildcards are supported.",
     )
     parser.add_argument(
         "--column",
@@ -2662,7 +2662,7 @@ def _annotate_optionality(parser):
 
 
 def main(args):
-    wrfout_paths = _expand_wrfout_paths(args.wrfout)
+    wrfout_paths = _expand_wrfout_paths(args.input)
     column_file = args.column
     column_varname = args.column_var
 

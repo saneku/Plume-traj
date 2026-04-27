@@ -38,7 +38,7 @@ pip install numpy scipy netCDF4 matplotlib cartopy
 
 ## 2. Required Inputs
 
-### 2.1 WRF output (`--wrfout`)
+### 2.1 WRF output (`--input`)
 
 One or more WRF NetCDF files containing:
 
@@ -51,7 +51,7 @@ One or more WRF NetCDF files containing:
 You can pass multiple files in time order, or a wildcard pattern such as:
 
 ```
---wrfout wrfout_d01_2025-11*
+--input wrfout_d01_2025-11*
 ```
 
 ---
@@ -62,7 +62,7 @@ Basic run:
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
@@ -74,7 +74,7 @@ python plume_forwtraj.py \
 
 Full argument list:
 
-- `--wrfout` (required, one or more)  
+- `--input` (required, one or more)  
   WRF output file(s). Wildcards are supported.
 
 - `--start-time`, `--end-time` (required)  
@@ -182,7 +182,7 @@ Replot helper options now include:
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
@@ -196,7 +196,7 @@ python plume_forwtraj.py \
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
@@ -214,7 +214,7 @@ python plume_forwtraj.py \
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --seed-bbox 40.0 10.0 40.1 10.1 \
@@ -228,7 +228,7 @@ python plume_forwtraj.py \
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
@@ -243,7 +243,7 @@ python plume_forwtraj.py \
 
 ```bash
 python plume_forwtraj.py \
-  --wrfout wrfout_d01_2025-11* \
+  --input wrfout_d01_2025-11* \
   --start-time 2025-11-23T08:30:00 \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
