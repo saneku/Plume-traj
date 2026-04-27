@@ -58,6 +58,26 @@ A NetCDF file containing the SO₂ column field.
 If the column field has a time dimension, the script uses the time index matching the chosen WRF start time (the closest WRF output to `--start-time`, which must fall inside the WRF time range). If the column file is shorter, the last available column time is used instead.
 Time strings are not timezone-converted by the script; they must use the same basis as WRF `Times` (normally UTC).
 
+### 2.3 MPAS source field (`--target mpas`)
+
+When `--target mpas` is selected, `--column` is read on the MPAS cell grid instead of the WRF grid.
+
+- Preferred layout: `(nCells,)`
+- Supported convenience layouts: `(time, nCells)` or `(time, nCells, nVertLevels)`
+- If a vertical dimension is present, the current backend collapses it to a 2-D cell source map by summing over levels.
+
+Example:
+
+```bash
+python plume_backtraj.py \
+  --target mpas \
+  --input history.2025-11-24_00.00.00.nc \
+  --column history.2025-11-24_00.00.00.nc \
+  --column-var so2 \
+  --receptor-lat 13.51 \
+  --receptor-lon 40.71
+```
+
 ---
 
 ## 3. Command-line Arguments

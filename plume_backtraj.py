@@ -23,6 +23,7 @@ from netCDF4 import Dataset
 from scipy.interpolate import RegularGridInterpolator
 
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
+from plume_mpas import run_backtraj as run_backtraj_mpas
 
 
 '''
@@ -2403,6 +2404,12 @@ def parse_args():
         help="One or more input files (ordered in time). Wildcards are supported.",
     )
     parser.add_argument(
+        "--target",
+        choices=("wrf", "mpas"),
+        default="wrf",
+        help="Select WRF or MPAS meteorology backend.",
+    )
+    parser.add_argument(
         "--column",
         required=True,
         help="NetCDF file containing SO2 column on WRF grid.",
@@ -2662,6 +2669,10 @@ def _annotate_optionality(parser):
 
 
 def main(args):
+    if args.target == "mpas":
+        run_backtraj_mpas(args)
+        return
+
     wrfout_paths = _expand_wrfout_paths(args.input)
     column_file = args.column
     column_varname = args.column_var

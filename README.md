@@ -1,6 +1,6 @@
 # Plume Trajectory Tools
 
-This repository provides two related scripts for Lagrangian parcel tracking using WRF winds:
+This repository provides two related scripts for Lagrangian parcel tracking using WRF winds or MPAS history files:
 
 - `plume_backtraj.py`: back-trajectory analysis from a 2d field to reconstruct time–height emission scenarios.
 - `plume_forwtraj.py`: forward advection of parcels released from a source column, with optional hourly parcel-location snapshots and a deposited-parcel map.
@@ -44,6 +44,10 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Optional `--map-extent WEST SOUTH EAST NORTH` override for custom map bounds
 - Optional forward hourly snapshots with `--hourly-figures`
 - Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
+- Select the meteorology backend with `--target wrf` or `--target mpas`
+- MPAS mode reads `history*.nc` files with `latCell`, `lonCell`, `zgrid`, `uReconstructZonal`, `uReconstructMeridional`, and `w`
+- In WRF mode, `--column` is the gridded source field on the WRF mesh; in MPAS mode, it is the source field on the MPAS cell mesh
+- If you point MPAS mode at a history file for `--column`, the current backend uses the requested variable as a cell field and collapses any vertical dimension to a 2-D source map by summing over levels
 
 ## Output Files
 

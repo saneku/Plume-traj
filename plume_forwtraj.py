@@ -55,6 +55,7 @@ from plume_backtraj import (
     plot_seed_vertical_distribution,
     read_wrf_geometry_and_winds,
 )
+from plume_mpas import run_forwtraj as run_forwtraj_mpas
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 
 TRAJECTORY_ALPHA = 1.0
@@ -1375,6 +1376,12 @@ def parse_args():
         help="One or more input files (ordered in time). Wildcards are supported.",
     )
     parser.add_argument(
+        "--target",
+        choices=("wrf", "mpas"),
+        default="wrf",
+        help="Select WRF or MPAS meteorology backend.",
+    )
+    parser.add_argument(
         "--start-time",
         required=True,
         help=(
@@ -1522,6 +1529,10 @@ def _annotate_optionality(parser):
 
 
 def main(args):
+    if args.target == "mpas":
+        run_forwtraj_mpas(args)
+        return
+
     wrfout_paths = _expand_wrfout_paths(args.input)
     start_time_dt = _parse_time_arg(args.start_time)
     end_time_dt = _parse_time_arg(args.end_time)

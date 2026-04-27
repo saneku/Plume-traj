@@ -54,6 +54,23 @@ You can pass multiple files in time order, or a wildcard pattern such as:
 --input wrfout_d01_2025-11*
 ```
 
+### 2.2 MPAS history files (`--target mpas`)
+
+When `--target mpas` is selected, `--input` should point to one or more MPAS history files. The backend reads:
+
+- `latCell`, `lonCell`
+- `zgrid`
+- `uReconstructZonal`, `uReconstructMeridional`
+- `w`
+
+Example:
+
+```bash
+--target mpas --input history.2025-11-24_*.nc
+```
+
+In MPAS mode the release point is specified with `--source-lat` and `--source-lon`, just like WRF mode. The current backend releases one vertical parcel column at the nearest MPAS cell.
+
 ---
 
 ## 3. Command-line Arguments
