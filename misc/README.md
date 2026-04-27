@@ -5,12 +5,13 @@ This folder contains helper scripts used by the main trajectory workflows.
 ## Scripts
 
 ### `aggregate_backtraj.py`
-Aggregates multiple back-trajectory run pickles (typically ash runs) into one combined analysis.
+Aggregates multiple back-trajectory run pickles into one combined analysis.
 
 - Loads per-run `run_ash.pkl` state files from run directories.
 - Concatenates trajectory arrays across runs.
 - Sums emission and mass-emission matrices.
 - Regenerates combined figures and TXT matrices (trajectories, age, emission-time, arrival-height, missed trajectories, emission heatmaps).
+- Supports both WRF and MPAS run pickles.
 
 Typical use:
 - Compare or merge several ash size-bin back-trajectory runs into one view.
@@ -24,6 +25,7 @@ Aggregates multiple forward-trajectory pickle outputs into one combined trajecto
 - Regenerates aggregated height-colored and age-colored trajectory maps.
 - Optionally saves deposited parcels only, colored by deposition hour (`--deposition-figure`).
 - Optionally regenerates hourly parcel-location maps (`--hourly-figures`).
+- Supports both WRF and MPAS run pickles.
 
 Typical use:
 - Combine forward runs from multiple aerosol bins or scenario variants.
@@ -37,10 +39,10 @@ Interactive NetCDF field editor with a map-based eraser tool.
 - Saves edits back to the source NetCDF file.
 
 Typical use:
-- Manually clean artifacts/noise in satellite-derived 2D fields before trajectory seeding.
+- Manually clean artifacts/noise in satellite-derived 2D fields before regridding to WRF or MPAS.
 
-### `regrid_wrf.py`
-Regrids one or more 2D/3D variables from a source grid onto a destination WRF grid.
+### `regrid_to_wrf.py`
+Regrids one or more 2D/3D variables from a cleaned source grid onto a destination WRF grid.
 
 - Reads source values and source coordinates.
 - Reads destination grid coordinates.
@@ -49,6 +51,17 @@ Regrids one or more 2D/3D variables from a source grid onto a destination WRF gr
 
 Typical use:
 - Prepare satellite or derived fields so they match the WRF grid used by trajectory scripts.
+
+### `regrid_to_mpas.py`
+Regrids one or more 2D/3D variables from a cleaned source grid onto an MPAS cell grid.
+
+- Reads source values and source coordinates.
+- Reads MPAS cell coordinates (`latCell`, `lonCell`).
+- Interpolates with `scipy.interpolate.griddata` (linear, then nearest fill for edge NaNs).
+- Writes a new NetCDF output file on the MPAS cell grid.
+
+Typical use:
+- Prepare cleaned satellite or derived fields so they match the MPAS mesh or MPAS history-grid layout used by the trajectory scripts.
 
 ### `settling_velocity_data.py`
 Reference data module for gravitational settling.
@@ -66,3 +79,4 @@ Typical use:
   - `plume_forwtraj.py`
 - Forward trajectory runs can now optionally save hourly parcel-location maps via `plume_forwtraj.py --hourly-figures`.
 - Aggregation and plotting scripts expect pickle structures produced by the current versions of the main scripts.
+- The intended workflow for gridded observations is: clean the source field first, then interpolate it to WRF or MPAS with the matching regrid helper.

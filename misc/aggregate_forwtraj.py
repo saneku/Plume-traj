@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 
 '''Aggregate and plot trajectories from multiple forward run pickles.
+Supports both WRF and MPAS run pickles.
 
 Example usage:
 
@@ -30,6 +31,12 @@ from plume_forwtraj import (
     plot_deposited_parcels_by_hour,
     plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
+)
+from plume_mpas import (
+    plot_mpas_deposited_parcels_by_hour,
+    plot_mpas_hourly_snapshots,
+    plot_mpas_parcel_trajectories,
+    plot_mpas_vertical_distribution,
 )
 
 def parse_args():
@@ -236,13 +243,79 @@ def load_and_aggregate(pickle_paths):
     return aggregated_state
 
 
+def load_and_aggregate_mpas(pickle_paths):
+    aggregated_state = None
+
+    for pkl_path in pickle_paths:
+        print(f"[diag] Loading {pkl_path}...")
+        with open(pkl_path, "rb") as fh:
+            state = pickle.load(fh)
+
+        if aggregated_state is None:
+            aggregated_state = state
+            traj = aggregated_state["trajectories"]
+            for key in ("lon", "lat", "z", "active", "times", "time_indices", "height_hist_m"):
+                if key in traj and traj[key] is not None:
+                    traj[key] = np.asarray(traj[key])
+            if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
+                ip = aggregated_state["initial_parcels"]
+                for key in ("lon", "lat", "z_init", "cell"):
+                    if key in ip and ip[key] is not None:
+                        ip[key] = np.asarray(ip[key])
+            continue
+
+        agg_traj = aggregated_state["trajectories"]
+        new_traj = state["trajectories"]
+        for key in ("lon", "lat", "z", "active", "times", "time_indices", "height_hist_m"):
+            if key in new_traj and new_traj[key] is not None:
+                new_traj[key] = np.asarray(new_traj[key])
+
+        t_agg = agg_traj["lon"].shape[0]
+        t_new = new_traj["lon"].shape[0]
+        if t_agg != t_new:
+            t_max = max(t_agg, t_new)
+            print(f"[diag] Time dimension mismatch: {t_agg} vs {t_new}. Padding to {t_max}.")
+            agg_traj["lon"] = _pad_time_with_last(agg_traj["lon"], t_max)
+            agg_traj["lat"] = _pad_time_with_last(agg_traj["lat"], t_max)
+            agg_traj["z"] = _pad_time_with_last(agg_traj["z"], t_max)
+            agg_traj["active"] = _pad_time(agg_traj["active"], t_max, False)
+
+            new_traj["lon"] = _pad_time_with_last(new_traj["lon"], t_max)
+            new_traj["lat"] = _pad_time_with_last(new_traj["lat"], t_max)
+            new_traj["z"] = _pad_time_with_last(new_traj["z"], t_max)
+            new_traj["active"] = _pad_time(new_traj["active"], t_max, False)
+
+        agg_traj["lon"] = np.concatenate([agg_traj["lon"], new_traj["lon"]], axis=1)
+        agg_traj["lat"] = np.concatenate([agg_traj["lat"], new_traj["lat"]], axis=1)
+        agg_traj["z"] = np.concatenate([agg_traj["z"], new_traj["z"]], axis=1)
+        agg_traj["active"] = np.concatenate([agg_traj["active"], new_traj["active"]], axis=1)
+
+        for key in ("final_heights_m", "height_hist_m"):
+            if key in agg_traj and key in new_traj and agg_traj[key] is not None and new_traj[key] is not None:
+                agg_traj[key] = np.concatenate([np.asarray(agg_traj[key]), np.asarray(new_traj[key])], axis=0 if np.asarray(agg_traj[key]).ndim == 1 else 1)
+
+        if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
+            ip = aggregated_state["initial_parcels"]
+            nip = state.get("initial_parcels")
+            if nip:
+                for key in ("lon", "lat", "z_init"):
+                    if key in ip and key in nip:
+                        ip[key] = np.concatenate([np.asarray(ip[key]), np.asarray(nip[key])])
+
+    return aggregated_state
+
+
 def main():
     args = parse_args()
     pickle_paths = sorted(Path().glob(args.pattern))
     if not pickle_paths:
         raise FileNotFoundError("No pickle files matched the given pattern.")
 
-    state = load_and_aggregate(pickle_paths)
+    with open(pickle_paths[0], "rb") as fh:
+        sample_state = pickle.load(fh)
+    target = sample_state.get("args", {}).get("target", "wrf")
+
+    state = load_and_aggregate_mpas(pickle_paths) if target == "mpas" else load_and_aggregate(pickle_paths)
     if state is None:
         raise ValueError("No valid pickle files loaded.")
 
@@ -280,6 +353,103 @@ def main():
         map_extent = script_args.get("map_extent")
         if map_extent is not None:
             map_extent = tuple(map_extent)
+
+    if target == "mpas":
+        lat_deg = np.asarray(grid["lat_deg"])
+        lon_deg = np.asarray(grid["lon_deg"])
+        traj_lon = np.asarray(trajectories["lon"])
+        traj_lat = np.asarray(trajectories["lat"])
+        traj_active = np.asarray(trajectories["active"])
+        traj_z = np.asarray(trajectories["z"])
+        traj_times = np.asarray(trajectories["times"])
+        init_heights = trajectories.get("initial_height_m")
+        if init_heights is None:
+            init_heights = state.get("initial_parcels", {}).get("z_init")
+        if init_heights is not None:
+            init_heights = np.asarray(init_heights)
+
+        if args.hourly_figures:
+            n_hourly = plot_mpas_hourly_snapshots(
+                lat_deg,
+                lon_deg,
+                traj_lon,
+                traj_lat,
+                traj_active,
+                traj_z,
+                trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
+                args.hourly_output_dir,
+                figure_dpi=fig_dpi,
+                map_extent=map_extent,
+            )
+            print(
+                "[diag] Hourly snapshots saved: "
+                f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+                "using 'parcel_positions_hour.XXXX.png' naming."
+            )
+
+        if args.deposition_figure is not None:
+            saved_dep = plot_mpas_deposited_parcels_by_hour(
+                lat_deg,
+                lon_deg,
+                traj_lon,
+                traj_lat,
+                traj_z,
+                traj_active,
+                traj_times,
+                args.deposition_figure,
+                figure_dpi=fig_dpi,
+                map_extent=map_extent,
+            )
+            if saved_dep:
+                print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
+
+        if args.height_figure:
+            plot_mpas_parcel_trajectories(
+                traj_lon,
+                traj_lat,
+                traj_active,
+                np.arange(traj_lon.shape[1]),
+                np.asarray(init_heights) / 1000.0 if init_heights is not None else np.zeros(traj_lon.shape[1]),
+                lat_deg,
+                lon_deg,
+                args.height_figure,
+                title="MPAS trajectories colored by initial height",
+                colorbar_label="Initial height (km)",
+                figure_dpi=fig_dpi,
+                map_extent=map_extent,
+                cmap_name="rainbow",
+            )
+
+        if args.age_figure:
+            ages = np.maximum((traj_times[-1] - traj_times[0]) / np.timedelta64(1, "h"), 0.0)
+            plot_mpas_parcel_trajectories(
+                traj_lon,
+                traj_lat,
+                traj_active,
+                np.arange(traj_lon.shape[1]),
+                np.full(traj_lon.shape[1], float(ages)),
+                lat_deg,
+                lon_deg,
+                args.age_figure,
+                title="MPAS trajectories colored by age",
+                colorbar_label="Age (hours)",
+                figure_dpi=fig_dpi,
+                map_extent=map_extent,
+                cmap_name="gist_ncar",
+            )
+
+        if args.seeds_vertical_figure is not None:
+            initial_parcels = state.get("initial_parcels")
+            if initial_parcels is None:
+                raise ValueError("Pickle does not contain initial parcels.")
+            plot_mpas_vertical_distribution(
+                parcels=initial_parcels,
+                out_path=args.seeds_vertical_figure,
+                z_min=z_min,
+                z_max=z_max,
+                figure_dpi=fig_dpi,
+            )
+        return
 
     if args.hourly_figures:
         traj_times_utc = None

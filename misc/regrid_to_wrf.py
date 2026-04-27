@@ -27,25 +27,25 @@ def regrid_wrf_variable(
     time_index: int = 0,
 ) -> None:
     """
-    Interpolates variables from a source WRF grid to a destination WRF grid.
+    Interpolates variables from a cleaned source grid to a destination WRF grid.
 
     Args:
-        source_data_path: Path to the source NetCDF file (e.g., 4km WRF output).
-        dest_grid_path: Path to the NetCDF file defining the destination grid.
-                        (e.g., 100km WRF output).
+        source_data_path: Path to the cleaned source NetCDF file.
+        dest_grid_path: Path to the NetCDF file defining the destination WRF grid.
+                        (e.g., a WRF input/history file).
         output_path: Path for the newly created NetCDF file with interpolated data.
         variable_names: A list of variable names to interpolate.
         time_index: The time index to process from the source file.
 
 
-python ./regrid_wrf.py \
+python ./regrid_to_wrf.py \
   --source-file "/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc" \
   --variables 'sulfurdioxide_total_vertical_column_15km' \
   --dest-file-grid "/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00" \
   --output-file '/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/100km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc' \
 
 
-python ./regrid_wrf.py \
+python ./regrid_to_wrf.py \
   --source-file "/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc" \
   --variables 'aerosol_index_354_388' \
   --dest-file-grid "/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025-11-23_06:00:00" \
@@ -182,13 +182,13 @@ python ./regrid_wrf.py \
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Regrid variables from one WRF grid to another."
+        description="Regrid cleaned fields onto a WRF grid."
     )
     parser.add_argument(
-        "--source-file", required=True, help="Path to the high-resolution source WRF file (e.g., 4km)."
+        "--source-file", required=True, help="Path to the cleaned source file to interpolate."
     )
     parser.add_argument(
-        "--dest-file-grid", required=True, help="Path to the low-resolution destination WRF file defining the target grid (e.g., 100km)."
+        "--dest-file-grid", required=True, help="Path to the WRF file defining the target grid (for example, a lower-resolution WRF input/history file)."
     )
     parser.add_argument(
         "--output-file", required=True, help="Path for the new NetCDF file to be created."

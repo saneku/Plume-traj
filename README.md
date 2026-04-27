@@ -59,7 +59,8 @@ The `misc/` folder contains helper scripts and data:
 
 - `misc/aggregate_backtraj.py`: aggregate multiple back-trajectory pickle runs and replot combined diagnostics.
 - `misc/aggregate_forwtraj.py`: aggregate multiple forward-trajectory pickle runs and replot height/age maps.
-- `misc/regrid_wrf.py`: utilities for regridding WRF fields or related inputs.
+- `misc/regrid_to_wrf.py`: utilities for regridding cleaned fields onto a WRF grid.
+- `misc/regrid_to_mpas.py`: utilities for regridding cleaned fields onto an MPAS cell grid.
 - `misc/netcdf_clean_brush.py`: helper for cleaning the 2d fields (for example, column loadings).
 - `misc/settling_velocity_data.py`: lookup tables for aerosol (ash and sulfate) settling velocity profiles.
 
