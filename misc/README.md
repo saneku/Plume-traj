@@ -10,7 +10,7 @@ Aggregates multiple back-trajectory run pickles into one combined analysis.
 - Loads per-run `run_ash.pkl` state files from run directories.
 - Concatenates trajectory arrays across runs.
 - Sums emission and mass-emission matrices.
-- Regenerates combined figures and TXT matrices (trajectories, age, emission-time, arrival-height, missed trajectories, emission heatmaps).
+- Regenerates combined figures and TXT matrices (trajectories, parcel seeds, age, emission-time, arrival-height, missed trajectories, emission heatmaps).
 - Supports both WRF and MPAS run pickles.
 
 Typical use:
@@ -80,3 +80,23 @@ Typical use:
 - Forward trajectory runs can now optionally save hourly parcel-location maps via `plume_forwtraj.py --hourly-figures`.
 - Aggregation and plotting scripts expect pickle structures produced by the current versions of the main scripts.
 - The intended workflow for gridded observations is: clean the source field first, then interpolate it to WRF or MPAS with the matching regrid helper.
+
+## WRF vs MPAS Output Families
+
+When the same diagnostic exists in both modes, the scripts now write the same output names.
+
+| Figure family | WRF | MPAS |
+| --- | --- | --- |
+| Trajectories | `aggregated_trajectories.png` | `aggregated_trajectories.png` |
+| Parcel seeds | `aggregated_parcel_locations.png` | `aggregated_parcel_locations.png` |
+| Age map | `aggregated_trajectory_ages.png` | `aggregated_trajectory_ages.png` |
+| Emission-time map | `aggregated_trajectory_emission_time.png` | `aggregated_trajectory_emission_time.png` |
+| Arrival-height map | `aggregated_trajectory_arrival_height.png` | `aggregated_trajectory_arrival_height.png` |
+| Missed trajectories | `aggregated_missed_trajectories.png` | `aggregated_missed_trajectories.png` |
+| Emission heatmap | `aggregated_emission_matrix.png` | `aggregated_emission_matrix.png` |
+| Mass-weighted heatmap | `aggregated_mass_matrix.png` | `aggregated_mass_matrix.png` |
+
+The difference is not in naming, but in the geometry behind the plots:
+
+- WRF uses structured `i/j/k` fields and WRF grid coordinates.
+- MPAS uses cell-based `lon/lat/z` trajectories and unstructured mesh coordinates.

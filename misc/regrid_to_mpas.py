@@ -27,7 +27,7 @@ def regrid_mpas_variable(
     time_index: int = 0,
 ) -> None:
     """
-    Interpolates variables from a cleaned source grid to an MPAS cell grid.
+    Clean a source grid first, then interpolate variables to an MPAS cell grid.
 
     Args:
         source_data_path: Path to the cleaned source NetCDF file.
@@ -181,13 +181,17 @@ python ./regrid_to_mpas.py \
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Regrid cleaned fields onto an MPAS cell grid."
+        description="Interpolate cleaned fields onto an MPAS cell grid."
     )
     parser.add_argument(
         "--source-file", required=True, help="Path to the cleaned source file to interpolate."
     )
     parser.add_argument(
-        "--dest-file-grid", required=True, help="Path to the MPAS mesh or history file defining the target cell grid."
+        "--dest-file-grid",
+        required=True,
+        help=(
+            "Path to the MPAS mesh or history file defining the target cell grid."
+        ),
     )
     parser.add_argument(
         "--output-file", required=True, help="Path for the new NetCDF file to be created."

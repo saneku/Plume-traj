@@ -27,7 +27,7 @@ def regrid_wrf_variable(
     time_index: int = 0,
 ) -> None:
     """
-    Interpolates variables from a cleaned source grid to a destination WRF grid.
+    Clean a source grid first, then interpolate variables to a destination WRF grid.
 
     Args:
         source_data_path: Path to the cleaned source NetCDF file.
@@ -182,13 +182,18 @@ python ./regrid_to_wrf.py \
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Regrid cleaned fields onto a WRF grid."
+        description="Interpolate cleaned fields onto a WRF grid."
     )
     parser.add_argument(
         "--source-file", required=True, help="Path to the cleaned source file to interpolate."
     )
     parser.add_argument(
-        "--dest-file-grid", required=True, help="Path to the WRF file defining the target grid (for example, a lower-resolution WRF input/history file)."
+        "--dest-file-grid",
+        required=True,
+        help=(
+            "Path to the WRF file defining the target grid "
+            "(for example, a lower-resolution WRF input/history file)."
+        ),
     )
     parser.add_argument(
         "--output-file", required=True, help="Path for the new NetCDF file to be created."

@@ -35,7 +35,9 @@ from plume_mpas import (
 )
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Aggregate and plot trajectories from multiple back-trajectory run directories.")
+    parser = argparse.ArgumentParser(
+        description="Aggregate and plot trajectories from multiple back-trajectory run directories."
+    )
     parser.add_argument(
         "dir_prefix",
         help="Directory prefix containing the ash run directories (e.g., '../4km')."
@@ -377,7 +379,10 @@ def main():
             receptor_lon=script_args["receptor_lon"],
             receptor_radius_m=script_args["receptor_radius"],
             seed_bbox=seed_bbox,
-            title="MPAS parcel seeds",
+            title=(
+                "Aggregated Parcel seeds at "
+                f"{_format_time_str(state['metadata'].get('start_time', ''))}"
+            ),
             colorbar_label=state["column"]["colorbar_label"],
             figure_dpi=dpi,
             map_extent=map_extent,
@@ -399,7 +404,7 @@ def main():
                 receptor_lon=script_args["receptor_lon"],
                 receptor_radius_m=script_args["receptor_radius"],
                 seed_bbox=seed_bbox,
-                title="MPAS trajectories by age",
+                title="Aggregated trajectory ages",
                 colorbar_label="Age, h",
                 figure_dpi=dpi,
                 map_extent=map_extent,
@@ -421,7 +426,7 @@ def main():
                 receptor_lon=script_args["receptor_lon"],
                 receptor_radius_m=script_args["receptor_radius"],
                 seed_bbox=seed_bbox,
-                title="MPAS trajectories by emission time",
+                title="Aggregated trajectory emission time",
                 colorbar_label="Emission time, h",
                 figure_dpi=dpi,
                 map_extent=map_extent,
@@ -443,7 +448,7 @@ def main():
                 receptor_lon=script_args["receptor_lon"],
                 receptor_radius_m=script_args["receptor_radius"],
                 seed_bbox=seed_bbox,
-                title="MPAS trajectories by arrival height",
+                title="Aggregated trajectory arrival height",
                 colorbar_label="Arrival height, km",
                 figure_dpi=dpi,
                 map_extent=map_extent,
@@ -473,26 +478,26 @@ def main():
                 colorbar_label="Parcel count",
             )
 
-        plot_mpas_trajectories(
-            column_1d,
-            lat_deg,
-            lon_deg,
-            traj_lon,
-            traj_lat,
-            traj_active,
-            np.where(arrived_mask)[0],
-            init_heights if init_heights is not None else np.zeros(traj_lon.shape[1]),
-            "aggregated_trajectories.png",
-            threshold=script_args["threshold"],
-            receptor_lat=script_args["receptor_lat"],
-            receptor_lon=script_args["receptor_lon"],
-            receptor_radius_m=script_args["receptor_radius"],
-            seed_bbox=seed_bbox,
-            title="MPAS parcel trajectories",
-            colorbar_label=state["column"]["colorbar_label"],
-            figure_dpi=dpi,
-            map_extent=map_extent,
-        )
+            plot_mpas_trajectories(
+                column_1d,
+                lat_deg,
+                lon_deg,
+                traj_lon,
+                traj_lat,
+                traj_active,
+                np.where(arrived_mask)[0],
+                init_heights if init_heights is not None else np.zeros(traj_lon.shape[1]),
+                "aggregated_trajectories.png",
+                threshold=script_args["threshold"],
+                receptor_lat=script_args["receptor_lat"],
+                receptor_lon=script_args["receptor_lon"],
+                receptor_radius_m=script_args["receptor_radius"],
+                seed_bbox=seed_bbox,
+                title="Aggregated parcel trajectories",
+                colorbar_label=state["column"]["colorbar_label"],
+                figure_dpi=dpi,
+                map_extent=map_extent,
+            )
 
         if init_heights is not None:
             plot_mpas_trajectories(
@@ -510,7 +515,7 @@ def main():
                 receptor_lon=script_args["receptor_lon"],
                 receptor_radius_m=script_args["receptor_radius"],
                 seed_bbox=seed_bbox,
-                title="MPAS missed trajectories",
+                title="Aggregated missed trajectories",
                 colorbar_label=state["column"]["colorbar_label"],
                 figure_dpi=dpi,
                 map_extent=map_extent,

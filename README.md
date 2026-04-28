@@ -61,8 +61,26 @@ The `misc/` folder contains helper scripts and data:
 - `misc/aggregate_forwtraj.py`: aggregate multiple forward-trajectory pickle runs and replot height/age maps.
 - `misc/regrid_to_wrf.py`: utilities for regridding cleaned fields onto a WRF grid.
 - `misc/regrid_to_mpas.py`: utilities for regridding cleaned fields onto an MPAS cell grid.
-- `misc/netcdf_clean_brush.py`: helper for cleaning the 2d fields (for example, column loadings).
+- `misc/netcdf_clean_brush.py`: helper for cleaning 2d source fields before regridding.
 - `misc/settling_velocity_data.py`: lookup tables for aerosol (ash and sulfate) settling velocity profiles.
+
+## Output Naming
+
+Where WRF and MPAS produce the same diagnostic figure family, the aggregation scripts now use the same filenames:
+
+- `aggregated_trajectories.png`
+- `aggregated_parcel_locations.png`
+- `aggregated_trajectory_ages.png`
+- `aggregated_trajectory_emission_time.png`
+- `aggregated_trajectory_arrival_height.png`
+- `aggregated_missed_trajectories.png`
+- `aggregated_emission_matrix.png`
+- `aggregated_mass_matrix.png`
+
+The grid-specific difference is in the input geometry:
+
+- WRF uses structured grid indices and WRF meteorology files.
+- MPAS uses cell-based history files and unstructured mesh coordinates.
 
 ## Citation
 
