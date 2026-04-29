@@ -28,6 +28,7 @@ def regrid_mpas_variable(
 ) -> None:
     """
     Clean a source grid first, then interpolate variables to an MPAS cell grid.
+    This is the MPAS-side companion to `regrid_to_wrf.py`.
 
     Args:
         source_data_path: Path to the cleaned source NetCDF file.

@@ -10,6 +10,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 '''Aggregate and plot trajectories from multiple forward run pickles.
 Supports both WRF and MPAS run pickles.
+Writes the shared aggregate figure names used by both backends where the
+diagnostic is the same.
 
 Example usage:
 

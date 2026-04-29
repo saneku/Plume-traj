@@ -210,6 +210,32 @@ Full argument list:
 
 ---
 
+## 5. Compact Run Sheet
+
+```bash
+# WRF-Chem
+python plume_backtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --column SO2_COLUMN.nc \
+  --column-var SO2_COLUMN \
+  --receptor-lat 13.51 \
+  --receptor-lon 40.71 \
+  --state-pickle run_state.pkl
+
+# MPAS-Chem
+python plume_backtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --column mpas_source.nc \
+  --column-var so2 \
+  --receptor-lat 13.51 \
+  --receptor-lon 40.71 \
+  --state-pickle run_state.pkl
+```
+
+---
+
 ## 4. What the Script Does
 
 ### 4.1 Read WRF geometry and winds

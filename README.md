@@ -53,6 +53,56 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 
 The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. In forward mode, `--hourly-figures` saves hourly parcel-location maps named `parcel_positions_hour.XXXX.png` (output location controlled by `--hourly-output-dir`), and `--deposition-figure` saves a deposited-parcel-only map colored by deposition hour since release. Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
 
+## Compact Run Sheet
+
+Backward mode:
+
+```bash
+# WRF-Chem
+python plume_backtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --column SO2_COLUMN.nc \
+  --column-var SO2_COLUMN \
+  --receptor-lat 13.51 \
+  --receptor-lon 40.71 \
+  --state-pickle run_state.pkl
+
+# MPAS-Chem
+python plume_backtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --column mpas_source.nc \
+  --column-var so2 \
+  --receptor-lat 13.51 \
+  --receptor-lon 40.71 \
+  --state-pickle run_state.pkl
+```
+
+Forward mode:
+
+```bash
+# WRF-Chem
+python plume_forwtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --state-pickle forward_run.pkl
+
+# MPAS-Chem
+python plume_forwtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --state-pickle forward_run.pkl
+```
+
 ## Misc Utilities
 
 The `misc/` folder contains helper scripts and data:

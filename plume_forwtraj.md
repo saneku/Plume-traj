@@ -149,6 +149,32 @@ Full argument list:
 
 ---
 
+## 7. Compact Run Sheet
+
+```bash
+# WRF-Chem
+python plume_forwtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --state-pickle forward_run.pkl
+
+# MPAS-Chem
+python plume_forwtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --state-pickle forward_run.pkl
+```
+
+---
+
 ## 4. Outputs
 
 The script writes:

@@ -8,6 +8,8 @@ from pathlib import Path
 
 '''Aggregate and plot trajectories from multiple back-trajectory run directories.
 Supports both WRF and MPAS run pickles.
+Writes the shared aggregate figure names used by both backends where the
+diagnostic is the same.
 Example usage:
 
 python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
