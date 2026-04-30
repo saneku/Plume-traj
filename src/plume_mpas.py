@@ -991,6 +991,8 @@ def plot_mpas_hourly_snapshots(
     map_extent=None,
     source_lat=None,
     source_lon=None,
+    tail_enabled=False,
+    tail_steps=6,
 ):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1012,6 +1014,69 @@ def plot_mpas_hourly_snapshots(
     cmap = plt.get_cmap("rainbow", n_bins)
     norm = BoundaryNorm(h_bins, cmap.N)
     height_centers = h_bins[:-1] + 0.5 * np.diff(h_bins)
+    traj_lon = np.asarray(traj_lon, dtype=float)
+    traj_lat = np.asarray(traj_lat, dtype=float)
+
+    def _draw_fancy_tail(ax, snap_idx):
+        if not tail_enabled or snap_idx <= 0:
+            return
+        max_tail = min(int(tail_steps), int(snap_idx))
+        for lag in range(max_tail, 0, -1):
+            t0 = snap_idx - lag
+            t1 = t0 + 1
+            lon0 = traj_lon[t0]
+            lat0 = traj_lat[t0]
+            lon1 = traj_lon[t1]
+            lat1 = traj_lat[t1]
+            active_pair = traj_active[t0] & traj_active[t1]
+            valid = (
+                np.isfinite(lon0)
+                & np.isfinite(lat0)
+                & np.isfinite(lon1)
+                & np.isfinite(lat1)
+                & active_pair
+            )
+            if not np.any(valid):
+                continue
+
+            z0 = traj_z_km[t0]
+            valid &= np.isfinite(z0)
+            if not np.any(valid):
+                continue
+
+            segs = np.stack(
+                [
+                    np.stack([lon0[valid], lat0[valid]], axis=1),
+                    np.stack([lon1[valid], lat1[valid]], axis=1),
+                ],
+                axis=1,
+            )
+            colors = cmap(norm(z0[valid]))
+            alpha_tail = 0.08 + 0.42 * ((max_tail - lag + 1) / max_tail)
+            colors_glow = colors.copy()
+            colors_glow[:, 3] = np.clip(alpha_tail * 0.45, 0.05, 0.35)
+            colors[:, 3] = np.clip(alpha_tail, 0.12, 0.65)
+            lw_glow = 2.8 + 1.6 * ((max_tail - lag + 1) / max_tail)
+            lw_core = 1.4 + 1.0 * ((max_tail - lag + 1) / max_tail)
+
+            lc_glow = LineCollection(
+                segs,
+                colors=colors_glow,
+                linewidths=lw_glow,
+                capstyle="round",
+                transform=PLATE_CARREE,
+                zorder=4,
+            )
+            ax.add_collection(lc_glow)
+            lc_core = LineCollection(
+                segs,
+                colors=colors,
+                linewidths=lw_core,
+                capstyle="round",
+                transform=PLATE_CARREE,
+                zorder=5,
+            )
+            ax.add_collection(lc_core)
     n_saved = 0
     for snap_idx, time_idx in enumerate(times):
         fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
@@ -1019,6 +1084,7 @@ def plot_mpas_hourly_snapshots(
         lat = traj_lat[snap_idx]
         active = traj_active[snap_idx]
         z = traj_z_km[snap_idx]
+        _draw_fancy_tail(ax, snap_idx)
         ax.scatter(
             lon[active],
             lat[active],
@@ -1633,7 +1699,7 @@ def run_forwtraj(args):
         plot_mpas_vertical_distribution(parcels, args.seeds_vertical_figure, args.z_min, args.z_max, args.figure_dpi)
         _diag(f"Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
     if args.hourly_figures:
-        n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon)
+        n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon, tail_enabled=True, tail_steps=6)
         _diag(f"Hourly snapshots saved: {n_hourly} file(s) in '{args.hourly_output_dir}'.")
     if args.initial_height_figure:
         init_heights_km = np.asarray(parcels["z_init"], dtype=float) / 1000.0

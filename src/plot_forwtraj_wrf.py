@@ -137,6 +137,8 @@ def main(args=None):
             source_lon=source_lon,
             map_extent=map_extent,
             trajectory_times_utc=traj_times_utc,
+            tail_enabled=True,
+            tail_steps=6,
         )
         print(
             "[diag] Hourly snapshots saved: "

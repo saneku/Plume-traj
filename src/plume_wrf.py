@@ -4433,6 +4433,8 @@ def plot_hourly_parcel_snapshots(
     source_lon=None,
     map_extent=None,
     trajectory_times_utc=None,
+    tail_enabled=False,
+    tail_steps=6,
 ):
     """Save parcel-location maps at each whole hour since release."""
     traj_i = np.asarray(trajectory_i, dtype=float)
@@ -4467,6 +4469,74 @@ def plot_hourly_parcel_snapshots(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
+    def _draw_fancy_tail(ax, vis_idx, snap_idx, ground_now_vis, color_values=None, cmap=None, norm=None, fixed_color=None):
+        if not tail_enabled or snap_idx <= 0:
+            return
+        max_tail = min(int(tail_steps), int(snap_idx))
+        for lag in range(max_tail, 0, -1):
+            t0 = snap_idx - lag
+            t1 = t0 + 1
+            lon0 = lon_hist[t0, vis_idx]
+            lat0 = lat_hist[t0, vis_idx]
+            lon1 = lon_hist[t1, vis_idx]
+            lat1 = lat_hist[t1, vis_idx]
+            valid = (
+                np.isfinite(lon0)
+                & np.isfinite(lat0)
+                & np.isfinite(lon1)
+                & np.isfinite(lat1)
+                & (~ground_now_vis)
+            )
+            if color_values is not None:
+                cvals = color_values[t0, vis_idx]
+                valid &= np.isfinite(cvals)
+            if not np.any(valid):
+                continue
+
+            alpha_tail = 0.08 + 0.42 * ((max_tail - lag + 1) / max_tail)
+            lw_glow = 2.8 + 1.6 * ((max_tail - lag + 1) / max_tail)
+            lw_core = 1.4 + 1.0 * ((max_tail - lag + 1) / max_tail)
+
+            segs = np.stack(
+                [
+                    np.stack([lon0[valid], lat0[valid]], axis=1),
+                    np.stack([lon1[valid], lat1[valid]], axis=1),
+                ],
+                axis=1,
+            )
+
+            if color_values is not None and cmap is not None and norm is not None:
+                cvals = color_values[t0, vis_idx][valid]
+                colors = cmap(norm(cvals))
+                colors_glow = colors.copy()
+                colors_glow[:, 3] = np.clip(alpha_tail * 0.45, 0.05, 0.35)
+                colors[:, 3] = np.clip(alpha_tail, 0.12, 0.65)
+            else:
+                rgba = np.array([0.0, 0.75, 1.0, 1.0]) if fixed_color is None else np.array(fixed_color)
+                colors = np.repeat(rgba[np.newaxis, :], segs.shape[0], axis=0)
+                colors_glow = colors.copy()
+                colors_glow[:, 3] = np.clip(alpha_tail * 0.45, 0.05, 0.35)
+                colors[:, 3] = np.clip(alpha_tail, 0.12, 0.65)
+
+            lc_glow = LineCollection(
+                segs,
+                colors=colors_glow,
+                linewidths=lw_glow,
+                capstyle="round",
+                transform=ccrs.PlateCarree(),
+                zorder=4,
+            )
+            ax.add_collection(lc_glow)
+
+            lc_core = LineCollection(
+                segs,
+                colors=colors,
+                linewidths=lw_core,
+                capstyle="round",
+                transform=ccrs.PlateCarree(),
+                zorder=5,
+            )
+            ax.add_collection(lc_core)
     heights_km = None
     hmin = None
     hmax = None
@@ -4516,6 +4586,15 @@ def plot_hourly_parcel_snapshots(
             if heights_km is not None:
                 hvals = heights_km[snap_idx, vis_idx]
                 valid_col = valid_ll & np.isfinite(hvals) & (~ground_now_vis)
+                _draw_fancy_tail(
+                    ax,
+                    vis_idx,
+                    snap_idx,
+                    ground_now_vis,
+                    color_values=heights_km,
+                    cmap=cmap_height,
+                    norm=norm_height,
+                )
                 if valid_col.any():
                     ax.scatter(
                         lons[valid_col],
@@ -4542,6 +4621,13 @@ def plot_hourly_parcel_snapshots(
                     )
             else:
                 valid_non_ground = valid_ll & (~ground_now_vis)
+                _draw_fancy_tail(
+                    ax,
+                    vis_idx,
+                    snap_idx,
+                    ground_now_vis,
+                    fixed_color=[0.0, 0.75, 1.0, 1.0],
+                )
                 if valid_non_ground.any():
                     ax.scatter(
                         lons[valid_non_ground],
@@ -4941,6 +5027,8 @@ def run_forwtraj(args):
             source_lon=args.source_lon,
             map_extent=map_extent,
             trajectory_times_utc=traj_times_utc,
+            tail_enabled=True,
+            tail_steps=6,
         )
         print(
             "[diag] Hourly snapshots saved: "

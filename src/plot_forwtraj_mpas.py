@@ -39,10 +39,15 @@ def main(args):
             traj_lat,
             traj_active,
             traj_z,
+            traj_times,
             trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
             args.hourly_output_dir,
             figure_dpi=dpi,
             map_extent=map_extent,
+            source_lat=script_args.get("source_lat"),
+            source_lon=script_args.get("source_lon"),
+            tail_enabled=True,
+            tail_steps=6,
         )
 
     if args.deposition_figure is not None:
