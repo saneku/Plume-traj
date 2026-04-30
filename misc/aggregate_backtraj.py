@@ -13,13 +13,14 @@ diagnostic is the same.
 Example usage:
 
 python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
+python misc/aggregate_backtraj.py ./4km --pickle-name run_state.pkl --map-extent 30 5 65 30
 
 '''
 
-# Add parent directory to path to import plume_backtraj
+# Add parent directory to path to import backend helpers
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from plume_backtraj import (
+from src.plume_wrf import (
     plot_parcel_locations,
     plot_parcel_trajectories,
     plot_parcel_age_map,
@@ -30,7 +31,7 @@ from plume_backtraj import (
     _format_time_str,
     compute_height_edges,
 )
-from plume_mpas import (
+from src.plume_mpas import (
     plot_mpas_column_and_parcels,
     plot_mpas_trajectories,
     plot_mpas_vertical_distribution,
@@ -51,16 +52,33 @@ def parse_args():
         metavar=("WEST", "SOUTH", "EAST", "NORTH"),
         help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
+    parser.add_argument(
+        "--pickle-name",
+        default=None,
+        help=(
+            "Optional pickle filename inside each ash*_run directory. "
+            "If omitted, tries run_ash.pkl, then run_state.pkl."
+        ),
+    )
     return parser.parse_args()
 
-def load_and_aggregate(ash_dirs):
+def _find_run_pickle(run_dir, pickle_name=None):
+    candidates = [pickle_name] if pickle_name else ["run_ash.pkl", "run_state.pkl"]
+    for name in candidates:
+        pkl_path = run_dir / name
+        if pkl_path.exists():
+            return pkl_path
+    return None
+
+
+def load_and_aggregate(ash_dirs, pickle_name=None):
     aggregated_state = None
     total_parcels_offset = 0
 
     for d in ash_dirs:
-        pkl_path = d / "run_ash.pkl"
-        if not pkl_path.exists():
-            print(f"[diag] {pkl_path} does not exist. Skipping.")
+        pkl_path = _find_run_pickle(d, pickle_name)
+        if pkl_path is None:
+            print(f"[diag] No run pickle found in {d}. Skipping.")
             continue
         
         print(f"[diag] Loading {pkl_path}...")
@@ -217,13 +235,13 @@ def load_and_aggregate(ash_dirs):
     return aggregated_state
 
 
-def load_and_aggregate_mpas(ash_dirs):
+def load_and_aggregate_mpas(ash_dirs, pickle_name=None):
     aggregated_state = None
 
     for d in ash_dirs:
-        pkl_path = d / "run_ash.pkl"
-        if not pkl_path.exists():
-            print(f"[diag] {pkl_path} does not exist. Skipping.")
+        pkl_path = _find_run_pickle(d, pickle_name)
+        if pkl_path is None:
+            print(f"[diag] No run pickle found in {d}. Skipping.")
             continue
 
         print(f"[diag] Loading {pkl_path}...")
@@ -321,21 +339,25 @@ def main():
 
     sample_pickle = None
     for d in ash_dirs:
-        pkl_path = d / "run_ash.pkl"
-        if pkl_path.exists():
+        pkl_path = _find_run_pickle(d, args.pickle_name)
+        if pkl_path is not None:
             sample_pickle = pkl_path
             break
     if sample_pickle is None:
-        print("No valid run_state.pkl files found.")
+        print("No valid run pickle files found.")
         return
 
     with open(sample_pickle, "rb") as fh:
         sample_state = pickle.load(fh)
     target = sample_state.get("args", {}).get("target", "wrf")
 
-    state = load_and_aggregate_mpas(ash_dirs) if target == "mpas" else load_and_aggregate(ash_dirs)
+    state = (
+        load_and_aggregate_mpas(ash_dirs, args.pickle_name)
+        if target == "mpas"
+        else load_and_aggregate(ash_dirs, args.pickle_name)
+    )
     if state is None:
-        print("No valid run_state.pkl files found.")
+        print("No valid run pickle files found.")
         return
 
     grid = state["grid"]

@@ -1,6 +1,6 @@
 # Misc Utilities (`misc/`)
 
-This folder contains helper scripts used by the main trajectory workflows.
+This folder contains helper scripts used by the main trajectory workflows. WRF plotting helpers are imported through `src/plume_wrf.py`; MPAS plotting helpers are imported through `src/plume_mpas.py`.
 
 ## Scripts
 
@@ -8,6 +8,7 @@ This folder contains helper scripts used by the main trajectory workflows.
 Aggregates multiple back-trajectory run pickles into one combined analysis.
 
 - Loads per-run `run_ash.pkl` state files from run directories.
+- Also accepts `run_state.pkl` by default; use `--pickle-name` to force a specific filename.
 - Concatenates trajectory arrays across runs.
 - Sums emission and mass-emission matrices.
 - Regenerates combined figures and TXT matrices (trajectories, parcel seeds, age, emission-time, arrival-height, missed trajectories, emission heatmaps).

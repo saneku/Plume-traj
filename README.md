@@ -5,6 +5,8 @@ This repository provides two related scripts for Lagrangian parcel tracking usin
 - `plume_backtraj.py`: back-trajectory analysis from a 2d field to reconstruct time–height emission scenarios.
 - `plume_forwtraj.py`: forward advection of parcels released from a source column, with optional hourly parcel-location snapshots and a deposited-parcel map.
 
+Backend-specific helpers are grouped under `src/`: `src/plume_wrf.py`, `src/plume_mpas.py`, and the shared base class in `src/plume_base.py`. The root scripts remain the user-facing entry points.
+
 
 ## Documentation
 

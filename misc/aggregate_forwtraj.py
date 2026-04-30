@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import numpy as np
 
-# Add parent directory to path to import plume_forwtraj
+# Add parent directory to path to import backend helpers
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 
@@ -27,14 +27,14 @@ python misc/aggregate_forwtraj.py \
 '''
 
 
-from plume_forwtraj import (
+from src.plume_wrf import (
     plot_trajectories_by_height,
     plot_trajectories_by_age,
     plot_deposited_parcels_by_hour,
     plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
-from plume_mpas import (
+from src.plume_mpas import (
     plot_mpas_deposited_parcels_by_hour,
     plot_mpas_hourly_snapshots,
     plot_mpas_parcel_trajectories,

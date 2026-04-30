@@ -13,6 +13,8 @@ from netCDF4 import Dataset
 from scipy.spatial import cKDTree
 
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
+from .plume_base import PlumeBackend
+from .plotting_base import plot_seed_bbox
 
 
 PLATE_CARREE = ccrs.PlateCarree()
@@ -22,6 +24,7 @@ PARCEL_MARKER_ALPHA = 0.75
 PARCEL_MARKER_EDGE = (0.1, 0.1, 0.1)
 PARCEL_MARKER_LINEWIDTH = 0.2
 TRAJECTORY_LINEWIDTH = 0.7
+TRAJECTORY_LINESTYLE = "-"
 TRAJECTORY_ALPHA = 0.65
 
 
@@ -111,6 +114,11 @@ def _read_mpas_file(path):
             raise ValueError("MPAS w vertical dimension does not match zgrid.")
 
         times = _as_time_array(ds)
+        if times.size > 0:
+            _diag(
+                "MPAS time axis: "
+                f"{times.size} steps from {times[0]} to {times[-1]}."
+            )
         return dict(
             lat_deg=lat_deg,
             lon_deg=lon_deg,
@@ -127,6 +135,9 @@ def _read_mpas_file(path):
 
 def read_mpas_history(input_args):
     paths = _expand_input_paths(input_args)
+    _diag(f"Reading {len(paths)} MPAS history file(s).")
+    for path in paths:
+        _diag(f"  input: {path}")
     parts = [_read_mpas_file(path) for path in paths]
     base = parts[0]
     for idx, part in enumerate(parts[1:], start=1):
@@ -144,6 +155,10 @@ def read_mpas_history(input_args):
     out["v"] = np.concatenate([p["v"] for p in parts], axis=0)
     out["w"] = np.concatenate([p["w"] for p in parts], axis=0)
     out["times"] = np.concatenate([p["times"] for p in parts], axis=0)
+    _diag(
+        "MPAS concatenated time axis: "
+        f"{out['times'].size} steps from {out['times'][0]} to {out['times'][-1]}."
+    )
     out["tree"] = _build_tree(out["lat_deg"], out["lon_deg"])
     out["cell_xyz"] = _sphere_xyz(out["lat_deg"], out["lon_deg"])
     out["triangulation"] = mtri.Triangulation(out["lon_deg"], out["lat_deg"])
@@ -215,7 +230,10 @@ def generate_parcels_from_point(lon_deg, lat_deg, cell_idx, n_vert, z_min, z_max
         rng = np.random.default_rng()
     if n_vert <= 0:
         return {"lon": np.array([]), "lat": np.array([]), "z": np.array([]), "cell": np.array([], dtype=int), "z_init": np.array([])}
-    z_targets = np.sort(rng.uniform(z_min, z_max, size=n_vert))
+    if n_vert == 1:
+        z_targets = np.array([0.5 * (z_min + z_max)], dtype=float)
+    else:
+        z_targets = np.linspace(z_min, z_max, num=n_vert, dtype=float)
     return dict(
         lon=np.full(n_vert, float(lon_deg), dtype=float),
         lat=np.full(n_vert, float(lat_deg), dtype=float),
@@ -272,6 +290,10 @@ def advect_parcels_forward(parcels, times, u, v, w, zmid, tree, start_time_index
     time_indices = [int(start_time_index)]
     current_sec = times_sec[start_time_index]
     for it in range(int(start_time_index), int(end_time_index)):
+        _diag(
+            "Processing time index "
+            f"{it} ({times[it]}) -> {it + 1} ({times[it + 1]})."
+        )
         dt_total = times_sec[it + 1] - times_sec[it]
         if dt_total <= 0:
             continue
@@ -352,6 +374,10 @@ def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, r
     time_hist = [times[start_time_index]]
     current_sec = times_sec[start_time_index]
     for it in range(int(start_time_index), 0, -1):
+        _diag(
+            "Processing time index "
+            f"{it} ({times[it]}) -> {it - 1} ({times[it - 1]})."
+        )
         dt_total = times_sec[it] - times_sec[it - 1]
         if dt_total <= 0:
             continue
@@ -473,9 +499,7 @@ def plot_mpas_column_and_parcels(column, lat_deg, lon_deg, parcels, out_path, th
             lat_scale = 111320.0
             lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
             ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.0, transform=PLATE_CARREE)
-    if seed_bbox is not None:
-        lon_min, lat_min, lon_max, lat_max = seed_bbox
-        ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min], [lat_min, lat_min, lat_max, lat_max, lat_min], color="black", linestyle=":", linewidth=1.0, transform=PLATE_CARREE)
+    plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
     if title:
@@ -530,9 +554,7 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
             lat_scale = 111320.0
             lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
             ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.0, transform=PLATE_CARREE)
-    if seed_bbox is not None:
-        lon_min, lat_min, lon_max, lat_max = seed_bbox
-        ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min], [lat_min, lat_min, lat_max, lat_max, lat_min], color="black", linestyle=":", linewidth=1.0, transform=PLATE_CARREE)
+    plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
     if title:
@@ -541,7 +563,7 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
     plt.close(fig)
 
 
-def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, lat_deg, lon_deg, out_path, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, cmap_name="rainbow"):
+def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, lat_deg, lon_deg, out_path, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, cmap_name="rainbow", source_lat=None, source_lon=None):
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     values = np.asarray(parcel_values, dtype=float)
@@ -605,13 +627,20 @@ def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indice
         transform=PLATE_CARREE,
         zorder=6,
     )
+    if source_lat is not None and source_lon is not None:
+        ax.scatter(
+            source_lon,
+            source_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=7,
+            transform=PLATE_CARREE,
+        )
 
-    value_min = float(np.nanmin(values))
-    value_max = float(np.nanmax(values))
-    title_suffix = ""
-    if np.isfinite(value_min) and np.isfinite(value_max):
-        title_suffix = f" (min={value_min:.2f}, max={value_max:.2f})"
-    ax.set_title((title or "Parcel trajectories") + title_suffix)
+    ax.set_title(title or "Parcel trajectories")
 
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
@@ -634,15 +663,173 @@ def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indice
     plt.close(fig)
 
 
+def plot_mpas_trajectories_by_age(
+    traj_lon,
+    traj_lat,
+    traj_active,
+    traj_z,
+    traj_times,
+    lat_deg,
+    lon_deg,
+    out_path,
+    figure_dpi=200,
+    map_extent=None,
+    source_lat=None,
+    source_lon=None,
+):
+    """Plot trajectories colored by parcel age since release, matching WRF logic."""
+    lon_hist = np.asarray(traj_lon, dtype=float)
+    lat_hist = np.asarray(traj_lat, dtype=float)
+    active_hist = np.asarray(traj_active, dtype=bool)
+    z_hist = np.asarray(traj_z, dtype=float)
+    times_arr = np.asarray(traj_times)
+    if lon_hist.ndim != 2 or lat_hist.ndim != 2 or active_hist.ndim != 2:
+        raise ValueError("MPAS trajectory arrays must be 2-D.")
+    if lon_hist.shape != lat_hist.shape or lon_hist.shape != active_hist.shape:
+        raise ValueError("Trajectory lon/lat/active arrays must have matching shape.")
+    if times_arr.ndim != 1 or times_arr.size != lon_hist.shape[0]:
+        raise ValueError("traj_times must be 1-D with one entry per trajectory snapshot.")
+    if times_arr.size < 2:
+        print("[diag] Not enough trajectory times for age plot.")
+        return False
+
+    if np.issubdtype(times_arr.dtype, np.datetime64):
+        age_hours = (times_arr - times_arr[0]) / np.timedelta64(1, "h")
+    else:
+        age_hours = (np.asarray(times_arr, dtype=float) - float(times_arr[0])) / 3600.0
+    age_hours = np.asarray(age_hours, dtype=float)
+
+    fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
+
+    n_bins = 10
+    age_min = float(np.nanmin(age_hours))
+    age_max = float(np.nanmax(age_hours))
+    if np.isclose(age_min, age_max):
+        age_max = age_min + 0.1
+    age_bins = np.linspace(age_min, age_max, n_bins + 1)
+    cmap = plt.get_cmap("gist_ncar", n_bins)
+    palette = cmap(np.arange(n_bins))
+
+    segments = np.array([
+        np.stack([lon_hist[:-1, :], lat_hist[:-1, :]], axis=2),
+        np.stack([lon_hist[1:, :], lat_hist[1:, :]], axis=2),
+    ]).transpose(2, 1, 0, 3)
+
+    # Match WRF logic: draw segments while parcel is active at segment start.
+    active_mask = active_hist[:-1, :].T
+    if active_mask.any():
+        age_seg = age_hours[:-1]
+        color_idx = np.digitize(age_seg, age_bins) - 1
+        color_idx = np.clip(color_idx, 0, n_bins - 1)
+        colors_per_step = palette[color_idx]
+        colors_all = np.repeat(colors_per_step[None, :, :], lon_hist.shape[1], axis=0)
+        colors_to_plot = colors_all[active_mask]
+        segments_to_plot = segments[active_mask]
+        lc = LineCollection(
+            segments_to_plot,
+            colors=colors_to_plot,
+            linestyle=TRAJECTORY_LINESTYLE,
+            linewidth=TRAJECTORY_LINEWIDTH,
+            alpha=TRAJECTORY_ALPHA,
+            transform=PLATE_CARREE,
+        )
+        ax.add_collection(lc)
+
+    # Draw deposited parcel stop points in black, analogous to WRF.
+    n_parcels = lon_hist.shape[1]
+    stop_idx = np.full(n_parcels, -1, dtype=int)
+    for p in range(n_parcels):
+        inactive = np.where(~active_hist[:, p])[0]
+        if inactive.size == 0:
+            continue
+        idx = int(inactive[0])
+        if np.isfinite(z_hist[idx, p]) and z_hist[idx, p] <= 0.0:
+            stop_idx[p] = idx
+    deposited = stop_idx >= 0
+    if np.any(deposited):
+        cols = np.where(deposited)[0]
+        rows = stop_idx[cols]
+        lon_stop = lon_hist[rows, cols]
+        lat_stop = lat_hist[rows, cols]
+        valid_stop = np.isfinite(lon_stop) & np.isfinite(lat_stop)
+        if valid_stop.any():
+            ax.scatter(
+                lon_stop[valid_stop],
+                lat_stop[valid_stop],
+                s=16.0,
+                c="black",
+                edgecolors="none",
+                transform=PLATE_CARREE,
+                zorder=8,
+            )
+
+    if source_lat is not None and source_lon is not None:
+        ax.scatter(
+            source_lon,
+            source_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=7,
+            transform=PLATE_CARREE,
+        )
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title("Parcel trajectories coloured by age since release")
+
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    age_centers = age_bins[:-1] + 0.5 * np.diff(age_bins)
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(age_bins, cmap.N))
+    sm.set_array([])
+    cb = plt.colorbar(
+        sm,
+        cax=cax,
+        orientation="horizontal",
+        boundaries=age_bins,
+        ticks=age_centers,
+    )
+    cb.set_ticklabels([f"{val:.1f} h" for val in age_centers])
+    cb.set_label("Parcel age (hours)")
+
+    fig.savefig(out_path, dpi=figure_dpi)
+    plt.close(fig)
+    return True
+
+
 def plot_mpas_vertical_distribution(parcels, out_path, z_min, z_max, figure_dpi=200):
     heights = np.asarray(parcels.get("z_init", []), dtype=float)
     if heights.size == 0:
         return
+    x_vals = np.asarray(parcels.get("cell", np.arange(heights.size)), dtype=float)
+    if x_vals.size != heights.size:
+        x_vals = np.arange(heights.size, dtype=float)
+    cmap = plt.get_cmap("turbo")
+    norm = plt.Normalize(z_min, z_max)
     fig, ax = plt.subplots(figsize=(10, 8))
-    ax.scatter(np.arange(heights.size), heights / 1000.0, s=14, c=heights, cmap="turbo", edgecolors="black", linewidths=0.15)
-    ax.set_xlabel("Parcel index")
+    sc = ax.scatter(x_vals, heights / 1000.0, s=14, c=heights, cmap=cmap, norm=norm, edgecolors="black", linewidths=0.15)
+    ax.set_xlabel("Grid-cell index")
     ax.set_ylabel("Initial altitude, km")
+    ax.set_title("Initial vertical distribution of parcels")
     ax.grid(True, linestyle=":", linewidth=0.4, alpha=0.6)
+    ax.text(
+        0.01,
+        0.97,
+        f"Total parcels: {heights.size}",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
+    )
+    cbar = plt.colorbar(sc, ax=ax)
+    cbar.set_label("Initial altitude (km)")
+    if np.isfinite(z_min) and np.isfinite(z_max) and z_max > z_min:
+        ticks = np.linspace(z_min, z_max, num=6)
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([f"{val/1000.0:.1f}" for val in ticks])
     if np.isfinite(z_min) and np.isfinite(z_max) and z_max > z_min:
         ax.set_ylim(z_min / 1000.0, z_max / 1000.0)
     fig.savefig(out_path, dpi=figure_dpi)
@@ -658,26 +845,116 @@ def plot_mpas_seed_locations(lat_deg, lon_deg, parcels, out_path, title=None, fi
     plt.close(fig)
 
 
-def plot_mpas_hourly_snapshots(lat_deg, lon_deg, traj_lon, traj_lat, traj_active, traj_z, time_indices, out_dir, figure_dpi=200, map_extent=None):
+def plot_mpas_hourly_snapshots(
+    lat_deg,
+    lon_deg,
+    traj_lon,
+    traj_lat,
+    traj_active,
+    traj_z,
+    traj_times,
+    time_indices,
+    out_dir,
+    figure_dpi=200,
+    map_extent=None,
+    source_lat=None,
+    source_lon=None,
+):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     times = np.asarray(time_indices, dtype=int)
+    traj_times = np.asarray(traj_times)
+    traj_active = np.asarray(traj_active, dtype=bool)
+    traj_z_km = np.asarray(traj_z, dtype=float) / 1000.0
+    active_heights = traj_z_km[traj_active & np.isfinite(traj_z_km)]
+    if active_heights.size > 0:
+        zmin = float(np.nanmin(active_heights))
+        zmax = float(np.nanmax(active_heights))
+        if zmax <= zmin:
+            zmax = zmin + 1.0
+    else:
+        zmin = 0.0
+        zmax = 1.0
+    n_bins = 10
+    h_bins = np.linspace(zmin, zmax, n_bins + 1)
+    cmap = plt.get_cmap("rainbow", n_bins)
+    norm = BoundaryNorm(h_bins, cmap.N)
+    height_centers = h_bins[:-1] + 0.5 * np.diff(h_bins)
     n_saved = 0
     for snap_idx, time_idx in enumerate(times):
         fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
         lon = traj_lon[snap_idx]
         lat = traj_lat[snap_idx]
-        active = np.asarray(traj_active, dtype=bool)[snap_idx]
-        z = np.asarray(traj_z[snap_idx], dtype=float)
-        ax.scatter(lon[active], lat[active], s=PARCEL_MARKER_SIZE, c=z[active] / 1000.0, cmap="turbo", edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, alpha=PARCEL_MARKER_ALPHA, transform=PLATE_CARREE, zorder=5)
-        ax.set_title(f"Parcel positions at snapshot {time_idx}")
+        active = traj_active[snap_idx]
+        z = traj_z_km[snap_idx]
+        ax.scatter(
+            lon[active],
+            lat[active],
+            s=PARCEL_MARKER_SIZE,
+            c=z[active],
+            cmap=cmap,
+            norm=norm,
+            edgecolors="none",
+            linewidths=0.0,
+            alpha=PARCEL_MARKER_ALPHA,
+            transform=PLATE_CARREE,
+            zorder=5,
+        )
+        if source_lat is not None and source_lon is not None:
+            ax.scatter(
+                source_lon,
+                source_lat,
+                marker="^",
+                s=80,
+                c="red",
+                edgecolors="black",
+                linewidths=0.4,
+                zorder=7,
+                transform=PLATE_CARREE,
+            )
+        if traj_times.size > snap_idx:
+            snapshot_time = traj_times[snap_idx]
+            if np.issubdtype(traj_times.dtype, np.datetime64):
+                utc_label = str(snapshot_time.astype("datetime64[s]"))
+                hour = int(np.rint((snapshot_time - traj_times[0]) / np.timedelta64(1, "h")))
+            else:
+                utc_label = str(snapshot_time)
+                hour = int(time_idx)
+            ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
+        else:
+            ax.set_title(f"Parcel positions at snapshot {time_idx}")
+        cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cb = plt.colorbar(
+            sm,
+            cax=cax,
+            orientation="horizontal",
+            boundaries=h_bins,
+            ticks=height_centers,
+        )
+        cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
+        cb.set_label("Height (km)")
         fig.savefig(out_dir / f"parcel_positions_hour.{snap_idx:04d}.png", dpi=figure_dpi)
         plt.close(fig)
         n_saved += 1
     return n_saved
 
 
-def plot_mpas_deposited_parcels_by_hour(lat_deg, lon_deg, traj_lon, traj_lat, traj_z, traj_active, traj_times, out_path, figure_dpi=200, map_extent=None):
+def plot_mpas_deposited_parcels_by_hour(
+    lat_deg,
+    lon_deg,
+    traj_lon,
+    traj_lat,
+    traj_z,
+    traj_active,
+    traj_times,
+    out_path,
+    figure_dpi=200,
+    map_extent=None,
+    source_lat=None,
+    source_lon=None,
+):
     traj_lon = np.asarray(traj_lon, dtype=float)
     traj_lat = np.asarray(traj_lat, dtype=float)
     traj_z = np.asarray(traj_z, dtype=float)
@@ -730,6 +1007,18 @@ def plot_mpas_deposited_parcels_by_hour(lat_deg, lon_deg, traj_lon, traj_lat, tr
         transform=PLATE_CARREE,
         zorder=8,
     )
+    if source_lat is not None and source_lon is not None:
+        ax.scatter(
+            source_lon,
+            source_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=9,
+            transform=PLATE_CARREE,
+        )
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.set_title(
@@ -753,8 +1042,8 @@ def plot_emission_matrix(emission, time_edges, z_bins, out_path, figure_dpi=200,
     mesh = ax.pcolormesh(time_edges, np.asarray(z_bins, dtype=float) / 1000.0, emission, shading="auto", cmap="viridis")
     ax.set_xlabel("Time")
     ax.set_ylabel("Height, km")
-    cbar = plt.colorbar(mesh, ax=ax)
-    cbar.set_label(colorbar_label)
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
 
@@ -768,6 +1057,10 @@ def run_backtraj(args):
     area = data["area"]
     tree = data["tree"]
     times_arr = np.asarray(times)
+    _diag(
+        "MPAS dimensions: "
+        f"nCells={lat.size}, nVertLevels={zmid.shape[1]}, nTimes={times_arr.size}."
+    )
 
     start_time = None
     if args.start_time is not None:
@@ -778,8 +1071,14 @@ def run_backtraj(args):
     if start_time < times_arr[0] or start_time > times_arr[-1]:
         raise ValueError("start time outside MPAS time range.")
     start_idx = int(np.argmin(np.abs(times_arr - start_time)))
+    _diag(
+        "Using start time "
+        f"{times_arr[start_idx]} at index {start_idx} "
+        f"(closest to requested {start_time})."
+    )
 
     with Dataset(args.column, "r") as ds_col:
+        _diag(f"Reading MPAS column field '{args.column_var}' from {args.column}.")
         if args.column_var not in ds_col.variables:
             raise KeyError(f"Column variable '{args.column_var}' not found.")
         col_var = ds_col.variables[args.column_var][:]
@@ -798,10 +1097,18 @@ def run_backtraj(args):
             raise ValueError(f"Unsupported MPAS column shape: {col_var.shape}")
         column = np.asarray(column, dtype=float).reshape(-1)
     if args.column_coef != 1.0:
+        _diag(f"Scaling column field by factor {args.column_coef}.")
         column = column * float(args.column_coef)
+    else:
+        _diag("Column scaling factor = 1.0 (no change).")
 
     seed_bbox = tuple(args.seed_bbox) if args.seed_bbox is not None else None
     parcels_init = generate_parcels_from_column(column, lat, lon, zmid, start_idx, args.threshold, args.n_columns, args.n_vert, args.z_min, args.z_max, seed_bbox=seed_bbox)
+    _diag(
+        "Initialized "
+        f"{parcels_init['lon'].size} MPAS parcels at time index {start_idx} "
+        f"({times_arr[start_idx]})."
+    )
     if args.n_vert > 0:
         cell_mass = np.asarray(column, dtype=float) * np.asarray(area, dtype=float)
         parcel_mass = cell_mass[parcels_init["cell"]] / float(args.n_vert)
@@ -811,13 +1118,17 @@ def run_backtraj(args):
 
     if args.seeds_figure:
         plot_mpas_column_and_parcels(column, lat, lon, parcels_init, args.seeds_figure, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title=f"Parcel seeds at {times_arr[start_idx]}", colorbar_label=args.colorbar_label, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        _diag(f"Parcel-location map saved to '{args.seeds_figure}'.")
     if args.seeds_vertical_figure:
         plot_mpas_vertical_distribution(parcels_init, args.seeds_vertical_figure, args.z_min, args.z_max, args.figure_dpi)
+        _diag(f"Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
 
     settling_profile = None
     if args.aer_type is not None:
         settling_profile = dict(heights_m=np.asarray(Z_M, dtype=float), velocity_ms=np.asarray(SETTLING_VEL_MS[args.aer_type], dtype=float))
+        _diag(f"Applying settling profile for '{args.aer_type}'.")
 
+    _diag("Starting MPAS backward advection.")
     result = advect_parcels_backward(
         parcels_init,
         times,
@@ -836,13 +1147,19 @@ def run_backtraj(args):
         emission_start_time=np.datetime64(args.emission_start.replace("_", "T")) if args.emission_start else None,
         emission_end_time=np.datetime64(args.emission_end.replace("_", "T")) if args.emission_end else None,
     )
+    _diag(
+        "MPAS backward advection complete: "
+        f"{int(result['arrived'].sum())}/{result['arrived'].size} parcels reached the receptor."
+    )
 
     if args.trajectory_figure:
         plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], parcels_init["z_init"], args.trajectory_figure, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="MPAS parcel trajectories", colorbar_label=args.colorbar_label, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        _diag(f"Trajectory figure saved to '{args.trajectory_figure}'.")
 
     if args.trajectory_age:
         ages = np.maximum((times_arr[start_idx] - result["arrival_time"]) / 3600.0, 0.0)
         plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], ages[result["arrived"]], args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="MPAS trajectories by age", colorbar_label="Age, h", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        _diag(f"Parcel-age figure saved to '{args.trajectory_age}'.")
 
     if args.output_txt:
         arrived = result["arrived"]
@@ -864,8 +1181,10 @@ def run_backtraj(args):
             fh.write("height " + " ".join(f"{v:.1f}" for v in z_edges[:-1] / 1000.0) + "\n")
             for row in emission[::-1]:
                 fh.write(" ".join(f"{int(v)}" for v in row) + "\n")
+        _diag(f"Time-height emission series written to '{args.output_txt}'.")
         if args.output_figure:
             plot_emission_matrix(emission, t_edges / 3600.0, z_edges / 1000.0, args.output_figure, args.figure_dpi, colorbar_label=args.colorbar_label)
+            _diag(f"Emission matrix figure saved to '{args.output_figure}'.")
 
     if args.state_pickle:
         args_dict = {k: getattr(args, k) for k in vars(args)}
@@ -934,6 +1253,10 @@ def run_forwtraj(args):
     lon = data["lon_deg"]
     zmid = data["zmid"]
     times_arr = np.asarray(times)
+    _diag(
+        "MPAS dimensions: "
+        f"nCells={lat.size}, nVertLevels={zmid.shape[1]}, nTimes={times_arr.size}."
+    )
     if args.start_time is not None:
         start_time = np.datetime64(args.start_time.replace("_", "T"))
         start_idx = int(np.argmin(np.abs(times_arr - start_time)))
@@ -946,21 +1269,89 @@ def run_forwtraj(args):
         end_idx = times_arr.size - 1
     if args.source_lat is None or args.source_lon is None:
         raise ValueError("MPAS forward mode requires --source-lat and --source-lon.")
+    if end_idx <= start_idx:
+        raise ValueError("End time index is not later than start time index.")
+    _diag(
+        "Advection window: index "
+        f"{start_idx} ({times_arr[start_idx]}) -> {end_idx} ({times_arr[end_idx]})."
+    )
     src_idx = int(_nearest_cells(data["tree"], np.asarray([args.source_lat]), np.asarray([args.source_lon]))[0])
+    _diag(
+        "Selected MPAS source cell "
+        f"{src_idx} at lat={lat[src_idx]:.4f}, lon={lon[src_idx]:.4f} "
+        f"for requested lat={args.source_lat:.4f}, lon={args.source_lon:.4f}."
+    )
     parcels = generate_parcels_from_point(lon[src_idx], lat[src_idx], src_idx, args.n_vert, args.z_min, args.z_max)
+    _diag(f"Initialized {parcels['lon'].size} MPAS parcels.")
 
-    result = advect_parcels_forward(parcels, times, data["u"], data["v"], data["w"], zmid, lat, lon, start_idx, end_idx, args.integration_dt)
-    if args.seeds_figure:
-        plot_mpas_seed_locations(lat, lon, parcels, args.seeds_figure, title="MPAS parcel seeds", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+    _diag("Starting MPAS forward advection.")
+    result = advect_parcels_forward(
+        parcels,
+        times,
+        data["u"],
+        data["v"],
+        data["w"],
+        zmid,
+        data["tree"],
+        start_idx,
+        end_idx,
+        args.integration_dt,
+    )
+    _diag("MPAS forward advection complete.")
+    seeds_figure = getattr(args, "seeds_figure", None)
+    if seeds_figure:
+        plot_mpas_seed_locations(lat, lon, parcels, seeds_figure, title="MPAS parcel seeds", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        _diag(f"Parcel seed map saved to '{seeds_figure}'.")
     if args.seeds_vertical_figure:
         plot_mpas_vertical_distribution(parcels, args.seeds_vertical_figure, args.z_min, args.z_max, args.figure_dpi)
+        _diag(f"Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
     if args.hourly_figures:
-        plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
-    if args.height_figure:
-        plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), parcels["z_init"] / 1000.0, lat, lon, args.height_figure, title="MPAS trajectories colored by initial height", colorbar_label="Initial height (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="rainbow")
+        n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon)
+        _diag(f"Hourly snapshots saved: {n_hourly} file(s) in '{args.hourly_output_dir}'.")
+    if args.initial_height_figure:
+        init_heights_km = np.asarray(parcels["z_init"], dtype=float) / 1000.0
+        init_min_km = float(np.nanmin(init_heights_km))
+        init_max_km = float(np.nanmax(init_heights_km))
+        title = (
+            "Parcel trajectories coloured by initial height "
+            f"(min={init_min_km:.2f} km, max={init_max_km:.2f} km)"
+        )
+        plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), init_heights_km, lat, lon, args.initial_height_figure, title=title, colorbar_label="Initial height (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="rainbow", source_lat=args.source_lat, source_lon=args.source_lon)
+        _diag(f"Initial-height figure saved to '{args.initial_height_figure}'.")
     if args.age_figure:
-        ages = np.maximum((times_arr[end_idx] - times_arr[start_idx]) / np.timedelta64(1, "h"), 0.0)
-        plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), np.full(result["trajectory_lon"].shape[1], float(ages)), lat, lon, args.age_figure, title="MPAS trajectories colored by age", colorbar_label="Age (hours)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="gist_ncar")
+        saved_age = plot_mpas_trajectories_by_age(
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_active"],
+            result["trajectory_z"],
+            result["trajectory_times"],
+            lat,
+            lon,
+            args.age_figure,
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+            source_lat=args.source_lat,
+            source_lon=args.source_lon,
+        )
+        if saved_age:
+            _diag(f"Age-colored figure saved to '{args.age_figure}'.")
+    if args.deposition_figure:
+        saved_dep = plot_mpas_deposited_parcels_by_hour(
+            lat,
+            lon,
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_z"],
+            result["trajectory_active"],
+            result["trajectory_times"],
+            args.deposition_figure,
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+            source_lat=args.source_lat,
+            source_lon=args.source_lon,
+        )
+        if saved_dep:
+            _diag(f"Deposition-hour figure saved to '{args.deposition_figure}'.")
     if args.state_pickle:
         args_dict = {k: getattr(args, k) for k in vars(args)}
         payload = dict(
@@ -995,3 +1386,23 @@ def run_forwtraj(args):
         with open(args.state_pickle, "wb") as fh:
             pickle.dump(payload, fh)
         print(f"[diag] Saved processing state to '{args.state_pickle}'.")
+
+
+class MPASBackend(PlumeBackend):
+    target = "mpas"
+
+    def run_backtraj(self, args):
+        run_backtraj(args)
+
+    def run_forwtraj(self, args):
+        run_forwtraj(args)
+
+    def plot_backtraj_state(self, args):
+        from . import plot_backtraj_mpas
+
+        plot_backtraj_mpas.main(args)
+
+    def plot_forwtraj_state(self, args):
+        from . import plot_forwtraj_mpas
+
+        plot_forwtraj_mpas.main(args)
