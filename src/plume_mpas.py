@@ -492,13 +492,22 @@ def plot_mpas_column_and_parcels(column, lat_deg, lon_deg, parcels, out_path, th
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
     mesh = _plot_background(ax, lon_deg, lat_deg, column, threshold=threshold)
     ax.scatter(parcels["lon"], parcels["lat"], s=PARCEL_MARKER_SIZE, c="red", edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, alpha=PARCEL_MARKER_ALPHA, transform=PLATE_CARREE, zorder=5)
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=80, c="red", edgecolors="black", linewidths=0.4, zorder=6, transform=PLATE_CARREE)
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.0, transform=PLATE_CARREE)
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        ax.plot(
+            receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang),
+            receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang),
+            color="red",
+            linewidth=2.0,
+            transform=PLATE_CARREE,
+        )
     plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
@@ -564,13 +573,22 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
         ax.add_collection(lc)
         ax.scatter(lon[0, :], lat[0, :], s=PARCEL_MARKER_SIZE, c=colors, edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, alpha=PARCEL_MARKER_ALPHA, transform=PLATE_CARREE, zorder=6)
         tick_centers = bins[:-1] + 0.5 * np.diff(bins)
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=80, c="red", edgecolors="black", linewidths=0.4, zorder=7, transform=PLATE_CARREE)
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.0, transform=PLATE_CARREE)
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        ax.plot(
+            receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang),
+            receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang),
+            color="red",
+            linewidth=2.0,
+            transform=PLATE_CARREE,
+        )
     plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     if bins is not None and cmap is not None and tick_centers is not None:
@@ -663,13 +681,23 @@ def plot_mpas_missed_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, 
             alpha=PARCEL_MARKER_ALPHA,
         )
 
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=100, c="red", edgecolors="black", linewidths=0.5, zorder=8, transform=PLATE_CARREE)
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.2, transform=PLATE_CARREE, zorder=8)
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        ax.plot(
+            receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang),
+            receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang),
+            color="red",
+            linewidth=2.0,
+            transform=PLATE_CARREE,
+            zorder=8,
+        )
 
     plot_seed_bbox(ax, seed_bbox)
     ax.set_xlabel("Longitude")

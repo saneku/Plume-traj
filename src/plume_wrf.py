@@ -1053,25 +1053,18 @@ def plot_parcel_locations(
             linestyles="-.",
             transform=ccrs.PlateCarree(),
         )
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(
-            receptor_lon,
-            receptor_lat,
-            marker="^",
-            s=80,
-            c="red",
-            edgecolors="black",
-            linewidths=0.4,
-            zorder=6,
-            transform=ccrs.PlateCarree(),
-        )
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.0, transform=ccrs.Geodetic())
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
     if lat_p.size:
         ax.scatter(
             lon_p,
@@ -1468,15 +1461,18 @@ def plot_parcel_trajectories(
             alpha=PARCEL_MARKER_ALPHA,
         )
 
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=80, c="red", edgecolors="black", linewidths=0.4, zorder=7, transform=ccrs.PlateCarree())
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.0, transform=ccrs.Geodetic())
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -1644,15 +1640,18 @@ def plot_parcel_age_map(
         alpha=PARCEL_MARKER_ALPHA,
     )
 
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=80, c="red", edgecolors="black", linewidths=0.4, zorder=7, transform=ccrs.PlateCarree())
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.0, transform=ccrs.Geodetic())
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -1831,32 +1830,24 @@ def plot_parcel_emission_time_map(
         alpha=PARCEL_MARKER_ALPHA,
     )
 
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(
-            receptor_lon,
-            receptor_lat,
-            marker="^",
-            s=80,
-            c="red",
-            edgecolors="black",
-            linewidths=0.4,
-            zorder=7,
-            transform=ccrs.PlateCarree(),
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(
+            lon_circle,
+            lat_circle,
+            color="red",
+            linewidth=2.0,
+            transform=ccrs.Geodetic(),
         )
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(
-                lon_circle,
-                lat_circle,
-                color="red",
-                linestyle="--",
-                linewidth=1.0,
-                transform=ccrs.Geodetic(),
-            )
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -2022,32 +2013,24 @@ def plot_parcel_arrival_height_map(
             transform=ccrs.PlateCarree(),
         )
 
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(
-            receptor_lon,
-            receptor_lat,
-            marker="^",
-            s=80,
-            c="red",
-            edgecolors="black",
-            linewidths=0.4,
-            zorder=7,
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(
+            lon_circle,
+            lat_circle,
+            color="red",
+            linewidth=2.0,
             transform=ccrs.PlateCarree(),
         )
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(
-                lon_circle,
-                lat_circle,
-                color="red",
-                linestyle="--",
-                linewidth=1.0,
-                transform=ccrs.PlateCarree(),
-            )
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -2274,15 +2257,18 @@ def plot_missed_parcel_trajectories(
                label="Final Position (colored by initial height)")
 
     # --- Receptor Visualization ---
-    if receptor_lat is not None and receptor_lon is not None:
-        ax.scatter(receptor_lon, receptor_lat, marker="^", s=100, c="red", edgecolors="black", linewidths=0.5, zorder=8, transform=ccrs.PlateCarree())
-        if receptor_radius_m is not None and receptor_radius_m > 0:
-            ang = np.linspace(0, 2 * np.pi, 181)
-            lat_scale = 111320.0
-            lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-            lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-            lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-            ax.plot(lon_circle, lat_circle, color="red", linestyle="--", linewidth=1.2, transform=ccrs.Geodetic(), zorder=8)
+    if (
+        receptor_lat is not None
+        and receptor_lon is not None
+        and receptor_radius_m is not None
+        and receptor_radius_m > 0
+    ):
+        ang = np.linspace(0, 2 * np.pi, 181)
+        lat_scale = 111320.0
+        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic(), zorder=8)
 
     _plot_seed_bbox(ax, seed_bbox)
 
