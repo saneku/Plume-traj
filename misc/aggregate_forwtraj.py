@@ -378,10 +378,15 @@ def main():
                 traj_lat,
                 traj_active,
                 traj_z,
+                traj_times,
                 trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
                 args.hourly_output_dir,
                 figure_dpi=fig_dpi,
                 map_extent=map_extent,
+                source_lat=script_args.get("source_lat"),
+                source_lon=script_args.get("source_lon"),
+                tail_enabled=True,
+                tail_steps=6,
             )
             print(
                 "[diag] Hourly snapshots saved: "
@@ -482,6 +487,8 @@ def main():
             source_lon=source_lon,
             map_extent=map_extent,
             trajectory_times_utc=traj_times_utc,
+            tail_enabled=True,
+            tail_steps=6,
         )
         print(
             "[diag] Hourly snapshots saved: "
