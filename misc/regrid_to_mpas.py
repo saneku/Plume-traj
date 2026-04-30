@@ -39,18 +39,18 @@ def regrid_mpas_variable(
         time_index: The time index to process from the source file.
 
 
-python ./regrid_to_mpas.py \
-  --source-file cleaned_source.nc \
-  --variables so2 \
-  --dest-file-grid MPAS_mesh_or_history.nc \
-  --output-file regridded_to_mpas.nc \
+python ./misc/regrid_to_mpas.py \
+  --source-file /lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc \
+  --variables sulfurdioxide_total_vertical_column_15km \
+  --dest-file-grid /scratch/ukhova/MPAS/MPAS-Model/regional/MiddleEastRegional.init.nc \
+  --output-file ./so2_regridded_to_mpas.nc \
 
 
-python ./regrid_to_mpas.py \
-  --source-file cleaned_source.nc \
+python ./misc/regrid_to_mpas.py \
+  --source-file /lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/AOD_AI_HEIGHT/4km/merged_aerosol_index_354_388_2025-NOV-24.nc \
   --variables aerosol_index_354_388 \
-  --dest-file-grid MPAS_mesh_or_history.nc \
-  --output-file regridded_to_mpas.nc \
+  --dest-file-grid /scratch/ukhova/MPAS/MPAS-Model/regional/MiddleEastRegional.init.nc \
+  --output-file ./aerosol_index_354_388_regridded_to_mpas.nc \
 
     """
     # --- 1. Read Source Grid and Data ---

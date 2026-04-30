@@ -593,17 +593,21 @@ def advect_parcels_backward_wrf(
     current_time_sec = t_sec[it_start]
 
     trajectory_times = []
+    trajectory_time_indices = []
     trajectory_i = []
     trajectory_j = []
+    trajectory_k = []
     trajectory_active = []
 
-    def record_trajectory(time_value):
+    def record_trajectory(time_value, time_index):
         trajectory_times.append(time_value)
+        trajectory_time_indices.append(int(time_index))
         trajectory_i.append(i_p.copy())
         trajectory_j.append(j_p.copy())
+        trajectory_k.append(k_p.copy())
         trajectory_active.append(active.copy())
 
-    record_trajectory(current_time_sec)
+    record_trajectory(current_time_sec, it_start)
 
     for step_idx, it in enumerate(range(it_start, 0, -1)):
         if not active.any():
@@ -875,7 +879,7 @@ def advect_parcels_backward_wrf(
         it_finish = it - 1
         finish_time_sec = sub_time
         current_time_sec = sub_time
-        record_trajectory(current_time_sec)
+        record_trajectory(current_time_sec, it - 1)
 
         if snapshot_config is not None and snapshot_config.get("column2d") is not None:
             mask_plot = active | arrived
@@ -964,8 +968,10 @@ def advect_parcels_backward_wrf(
         result["advection_finish_time"] = times[it_finish]
     result["dt_seconds_stats"] = dt_stats
     result["trajectory_times"] = np.array(trajectory_times, dtype=float)
+    result["trajectory_time_indices"] = np.array(trajectory_time_indices, dtype=int)
     result["trajectory_i"] = np.stack(trajectory_i, axis=0)
     result["trajectory_j"] = np.stack(trajectory_j, axis=0)
+    result["trajectory_k"] = np.stack(trajectory_k, axis=0)
     result["trajectory_active"] = np.stack(trajectory_active, axis=0)
     return result
 
@@ -2450,6 +2456,11 @@ def parse_backtraj_args():
         help="Save hourly parcel location plots during back-trajectory integration.",
     )
     parser.add_argument(
+        "--hourly-output-dir",
+        default=".",
+        help="Output directory for hourly snapshot images.",
+    )
+    parser.add_argument(
         "--arrival-bin-minutes",
         type=float,
         default=60.0,
@@ -3221,6 +3232,13 @@ def run_backtraj(args):
         print("[diag] No time edges available; skipping mass-weighted emission figure.")
 
     if args.state_pickle:
+        height_hist = compute_height_history(
+            trajectory_i=result["trajectory_i"],
+            trajectory_j=result["trajectory_j"],
+            trajectory_k=result["trajectory_k"],
+            trajectory_time_indices=result["trajectory_time_indices"],
+            z_center=z_center,
+        )
         args_dict = {k: getattr(args, k) for k in vars(args)}
         pickle_payload = dict(
             args=args_dict,
@@ -3242,8 +3260,10 @@ def run_backtraj(args):
             ),
             trajectories=dict(
                 times=result["trajectory_times"],
+                time_indices=result["trajectory_time_indices"],
                 i=result["trajectory_i"],
                 j=result["trajectory_j"],
+                k=result["trajectory_k"],
                 active=result["trajectory_active"],
                 arrived_mask=arrived_mask_full,
                 arrival_indices=arrived_indices,
@@ -3254,6 +3274,7 @@ def run_backtraj(args):
                 arrival_z=arrival_z,
                 arrival_height_m=arrival_z,
                 initial_height_m=parcels_init.get("z_init"),
+                height_hist_m=height_hist,
             ),
             emission=dict(
                 matrix=emission,
@@ -4434,12 +4455,12 @@ def plot_hourly_parcel_snapshots(
     if traj_times.size == 0:
         return 0
 
-    age_hours = (traj_times - traj_times[0]) / 3600.0
-    max_age = float(np.nanmax(age_hours))
-    if not np.isfinite(max_age):
+    elapsed_hours = np.abs(traj_times - traj_times[0]) / 3600.0
+    max_elapsed = float(np.nanmax(elapsed_hours))
+    if not np.isfinite(max_elapsed):
         return 0
 
-    max_hour = max(0, int(np.floor(max_age + 1e-9)))
+    max_hour = max(0, int(np.floor(max_elapsed + 1e-9)))
     target_hours = np.arange(0, max_hour + 1, dtype=int)
 
     out_dir = Path(out_dir)
@@ -4472,7 +4493,7 @@ def plot_hourly_parcel_snapshots(
 
     saved = 0
     for hour in target_hours:
-        snap_idx = int(np.argmin(np.abs(age_hours - float(hour))))
+        snap_idx = int(np.argmin(np.abs(elapsed_hours - float(hour))))
         # Show all parcels with valid map coordinates; inactive parcels remain
         # visible at their final position after advection stops for them.
         visible_mask = np.isfinite(lon_hist[snap_idx]) & np.isfinite(lat_hist[snap_idx])
@@ -4568,7 +4589,7 @@ def plot_hourly_parcel_snapshots(
                 utc_label = str(snapshot_utc)
             ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
         else:
-            age_actual = float(age_hours[snap_idx])
+            age_actual = float(elapsed_hours[snap_idx])
             ax.set_title(
                 f"Parcel positions at +{hour:02d} h "
                 f"(nearest snapshot: +{age_actual:.2f} h)"

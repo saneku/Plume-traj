@@ -7,17 +7,17 @@ INPUT='/scratch/ukhova/SandBox/WRF/run_hayligubbi/wrfout_d01_2025*'
 COLUMN='/lustre2/project/k10022/ukhova/Volcano/Hayli_Gubbi/operRSmerged_SO2_/sulfurdioxide_total_vertical_column_15km/4km/merged_sulfurdioxide_total_vertical_column_15km_2025-Nov-24.nc'
 COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 
-outdir="./so2_run"
+outdir="./so2_wrf_run"
 mkdir -p "$outdir"
 python plume_backtraj.py \
   --target wrf \
   --input "$INPUT" \
-  --start-time '2025-11-24T11:00:00' \
+  --start-time '2025-11-24T12:00:00' \
   --column "$COLUMN" --integration-dt 15 \
   --efolding-days 35 \
   --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU' \
-  --n-columns 1000 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
-  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
+  --n-columns 100 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
+  --emission-start '2025-11-24T06:00:00' --emission-end '2025-11-24T09:00:00' \
   --receptor-lat 13.51 --receptor-lon 40.71 \
   --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
   --arrival-bin-minutes 30 \
@@ -35,6 +35,44 @@ python plume_backtraj.py \
   --map-extent 30 5 65 30 \
   --hourly-figures \
   --seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png"
+
+Example MPAS SO2 run:
+
+HIST='/scratch/ukhova/MPAS/MPAS-Model/regional/history*.nc'
+COLUMN='/scratch/ukhova/MPAS/Plume-traj/so2_regridded_to_mpas.nc'
+COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
+
+outdir="./so2_mpas_run"
+mkdir -p "$outdir"
+python plume_backtraj.py \
+  --target mpas \
+  --input "$HIST" \
+  --start-time '2025-11-24T12:00:00' \
+  --column "$COLUMN" --integration-dt 15 \
+  --efolding-days 35 \
+  --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU' \
+  --n-columns 100 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
+  --emission-start '2025-11-24T06:00:00' --emission-end '2025-11-24T09:00:00' \
+  --receptor-lat 13.51 --receptor-lon 40.71 \
+  --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
+  --arrival-bin-minutes 30 \
+  --output-txt "$outdir/so2_emission_time_height.txt" \
+  --output-figure "$outdir/so2_emission_time_height.png" \
+  --trajectory-figure "$outdir/so2_trajectories.png" \
+  --trajectory-age "$outdir/so2_trajectory_ages.png" \
+  --trajectory-emission-time-figure "$outdir/so2_trajectory_emission_time.png" \
+  --seeds-figure "$outdir/parcel_initial_locations.png" \
+  --mass-figure "$outdir/mass_matrix.png" \
+  --mass-output-txt "$outdir/mass_emission_time_height.txt" \
+  --trajectory-arrival-height-figure "$outdir/so2_trajectory_arrival_heights.png" \
+  --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
+  --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
+  --map-extent 30 5 65 30 \
+  --hourly-figures \
+  --seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png"
+
+
+
 
 Example aerosol loop:
 

@@ -10,6 +10,7 @@ from .plume_wrf import (
     plot_missed_parcel_trajectories,
     plot_emission_matrix,
     plot_seed_vertical_distribution,
+    plot_hourly_parcel_snapshots,
     _format_time_str, # Import the helper function
     compute_height_edges,
 )
@@ -27,6 +28,22 @@ def parse_args():
         metavar=("WEST", "SOUTH", "EAST", "NORTH"),
         help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
+    parser.add_argument(
+        "--hourly-figures",
+        action="store_true",
+        help="Re-generate hourly parcel snapshot plots from the saved state.",
+    )
+    parser.add_argument(
+        "--hourly-output-dir",
+        default="hourly_replot",
+        help="Output directory for re-generated hourly snapshot images.",
+    )
+    parser.add_argument(
+        "--figure-dpi",
+        type=int,
+        default=None,
+        help="Optional figure DPI override for all re-plotted figures.",
+    )
     return parser.parse_args()
 
 def main(args=None):
@@ -40,7 +57,7 @@ def main(args=None):
     xlat = state["grid"]["xlat"]
     xlon = state["grid"]["xlon"]
     script_args = state["args"]
-    dpi = script_args["figure_dpi"]
+    dpi = int(args.figure_dpi) if args.figure_dpi is not None else script_args["figure_dpi"]
     seed_bbox = tuple(script_args["seed_bbox"]) if script_args.get("seed_bbox") else None
     if args.map_extent is not None:
         map_extent = tuple(args.map_extent)
@@ -281,6 +298,34 @@ def main(args=None):
                 )
                 f.write(row_vals + "\n")
         print("Mass-weighted emission series written to 'mass_matrix_replot.txt'.")
+
+    if args.hourly_figures:
+        traj = state["trajectories"]
+        traj_times_utc = None
+        traj_times = np.asarray(traj["times"])
+        if np.issubdtype(traj_times.dtype, np.datetime64):
+            traj_times_utc = traj_times.astype("datetime64[s]")
+        n_hourly = plot_hourly_parcel_snapshots(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=traj["i"],
+            trajectory_j=traj["j"],
+            trajectory_active=traj["active"],
+            trajectory_k=traj.get("k"),
+            trajectory_times_sec=traj["times"],
+            out_dir=args.hourly_output_dir,
+            height_hist_m=traj.get("height_hist_m"),
+            figure_dpi=dpi,
+            seed_bbox=seed_bbox,
+            source_lat=script_args.get("source_lat"),
+            source_lon=script_args.get("source_lon"),
+            map_extent=map_extent,
+            trajectory_times_utc=traj_times_utc,
+        )
+        print(
+            "[diag] Hourly snapshots re-plotted: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}'."
+        )
 
 
 

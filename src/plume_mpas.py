@@ -502,6 +502,19 @@ def plot_mpas_column_and_parcels(column, lat_deg, lon_deg, parcels, out_path, th
     plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
+    text_str = f"Total parcels initialized: {parcels['lon'].size}"
+    if threshold is not None:
+        text_str += f" within contour of {threshold:.2f} {colorbar_label}"
+    ax.text(
+        0.01,
+        0.98,
+        text_str,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+        bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
+    )
     if title:
         ax.set_title(title)
     fig.savefig(out_path, dpi=figure_dpi)
@@ -510,9 +523,12 @@ def plot_mpas_column_and_parcels(column, lat_deg, lon_deg, parcels, out_path, th
 
 def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, out_path, threshold=None, receptor_lat=None, receptor_lon=None, receptor_radius_m=None, seed_bbox=None, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, value_unit_label=None):
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
-    mesh = _plot_background(ax, lon_deg, lat_deg, column, threshold=threshold)
+    _plot_background(ax, lon_deg, lat_deg, column, threshold=threshold)
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     values = np.asarray(parcel_values, dtype=float)
+    bins = None
+    cmap = None
+    tick_centers = None
     if parcel_indices.size == 0 or values.size == 0:
         parcel_indices = np.array([], dtype=int)
         values = np.array([], dtype=float)
@@ -530,7 +546,7 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
         if np.isclose(vmin, vmax):
             vmax = vmin + 1.0
         bins = np.linspace(vmin, vmax, n_bins + 1)
-        cmap = plt.get_cmap("gist_ncar", n_bins)
+        cmap = plt.get_cmap("rainbow", n_bins)
         palette = cmap(np.arange(n_bins))
         color_idx = np.clip(np.digitize(values, bins) - 1, 0, n_bins - 1)
         colors = palette[color_idx]
@@ -547,6 +563,7 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
         lc = LineCollection(segs, colors=seg_colors, linewidths=TRAJECTORY_LINEWIDTH, alpha=TRAJECTORY_ALPHA, transform=PLATE_CARREE)
         ax.add_collection(lc)
         ax.scatter(lon[0, :], lat[0, :], s=PARCEL_MARKER_SIZE, c=colors, edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, alpha=PARCEL_MARKER_ALPHA, transform=PLATE_CARREE, zorder=6)
+        tick_centers = bins[:-1] + 0.5 * np.diff(bins)
     if receptor_lat is not None and receptor_lon is not None:
         ax.scatter(receptor_lon, receptor_lat, marker="^", s=80, c="red", edgecolors="black", linewidths=0.4, zorder=7, transform=PLATE_CARREE)
         if receptor_radius_m is not None and receptor_radius_m > 0:
@@ -556,11 +573,126 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
             ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.0, transform=PLATE_CARREE)
     plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
-    plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
+    if bins is not None and cmap is not None and tick_centers is not None:
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(bins, cmap.N))
+        sm.set_array([])
+        cb = plt.colorbar(
+            sm,
+            cax=cax,
+            orientation="horizontal",
+            boundaries=bins,
+            ticks=tick_centers,
+        )
+        cb.set_ticklabels([f"{val:.2f}" for val in tick_centers])
+        cb.set_label(colorbar_label)
     if title:
         ax.set_title(title)
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
+
+
+def plot_mpas_missed_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_active, arrived_mask, initial_heights_m, out_path, threshold=None, receptor_lat=None, receptor_lon=None, receptor_radius_m=None, seed_bbox=None, z_min=None, z_max=None, figure_dpi=200, map_extent=None):
+    missed_flags = ~np.asarray(arrived_mask, dtype=bool)
+    parcel_indices = np.where(missed_flags)[0]
+    if parcel_indices.size == 0:
+        _diag("All parcels reached the receptor; skipping missed-trajectory figure.")
+        return False
+
+    fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
+    _ = _plot_background(ax, lon_deg, lat_deg, column, threshold=threshold)
+
+    z_range_min = z_min if z_min is not None else 0.0
+    z_range_max = z_max if z_max is not None else 30000.0
+    if not np.isfinite(z_range_min):
+        z_range_min = 0.0
+    if not np.isfinite(z_range_max) or z_range_max <= z_range_min:
+        z_range_max = z_range_min + 1.0
+
+    n_bins = 10
+    color_bins = np.linspace(z_range_min, z_range_max, n_bins + 1)
+    cmap = plt.get_cmap("rainbow", n_bins)
+    palette = cmap(np.arange(n_bins))
+
+    init_heights_arr = np.asarray(initial_heights_m, dtype=float)[parcel_indices]
+    default_height = 0.5 * (z_range_min + z_range_max)
+    heights_for_color = np.where(np.isfinite(init_heights_arr), init_heights_arr, default_height)
+    color_idx = np.digitize(heights_for_color, color_bins) - 1
+    color_idx = np.clip(color_idx, 0, n_bins - 1)
+    color_lookup = palette[color_idx]
+    missing_mask = ~np.isfinite(init_heights_arr)
+    if missing_mask.any():
+        color_lookup[missing_mask] = np.array([0.6, 0.6, 0.6, 1.0])
+
+    lon = np.asarray(traj_lon)[:, parcel_indices]
+    lat = np.asarray(traj_lat)[:, parcel_indices]
+    active_sub = np.asarray(traj_active, dtype=bool)[:, parcel_indices]
+    segments = np.array([
+        np.stack([lon[:-1, :], lat[:-1, :]], axis=2),
+        np.stack([lon[1:, :], lat[1:, :]], axis=2),
+    ]).transpose(2, 1, 0, 3)
+    active_mask = (active_sub[:-1, :] & active_sub[1:, :]).T
+    if active_mask.any():
+        segments_to_plot = segments[active_mask]
+        colors_to_plot = np.repeat(color_lookup, active_mask.sum(axis=1), axis=0)
+        lc = LineCollection(
+            segments_to_plot,
+            colors=colors_to_plot,
+            linestyle=TRAJECTORY_LINESTYLE,
+            linewidth=TRAJECTORY_LINEWIDTH,
+            alpha=TRAJECTORY_ALPHA,
+            transform=PLATE_CARREE,
+        )
+        ax.add_collection(lc)
+
+    last_active_time_idx = np.asarray(traj_active, dtype=bool)[:, parcel_indices].sum(axis=0) - 1
+    last_active_time_idx = np.clip(last_active_time_idx, 0, np.asarray(traj_lat).shape[0] - 1)
+    finish_lon = np.asarray(traj_lon)[last_active_time_idx, parcel_indices]
+    finish_lat = np.asarray(traj_lat)[last_active_time_idx, parcel_indices]
+    valid_finish = np.isfinite(finish_lon) & np.isfinite(finish_lat)
+    if valid_finish.any():
+        ax.scatter(
+            finish_lon[valid_finish],
+            finish_lat[valid_finish],
+            s=PARCEL_MARKER_SIZE,
+            c=color_lookup[valid_finish],
+            marker="o",
+            edgecolors=PARCEL_MARKER_EDGE,
+            linewidths=PARCEL_MARKER_LINEWIDTH,
+            zorder=7,
+            transform=PLATE_CARREE,
+            alpha=PARCEL_MARKER_ALPHA,
+        )
+
+    if receptor_lat is not None and receptor_lon is not None:
+        ax.scatter(receptor_lon, receptor_lat, marker="^", s=100, c="red", edgecolors="black", linewidths=0.5, zorder=8, transform=PLATE_CARREE)
+        if receptor_radius_m is not None and receptor_radius_m > 0:
+            ang = np.linspace(0, 2 * np.pi, 181)
+            lat_scale = 111320.0
+            lon_scale = max(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+            ax.plot(receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang), receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang), color="red", linestyle="--", linewidth=1.2, transform=PLATE_CARREE, zorder=8)
+
+    plot_seed_bbox(ax, seed_bbox)
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    finite_init = init_heights_arr[np.isfinite(init_heights_arr)]
+    title_suffix = ""
+    if finite_init.size:
+        min_init = float(np.min(finite_init))
+        max_init = float(np.max(finite_init))
+        title_suffix = f" (min={min_init/1000.0:.2f} km, max={max_init/1000.0:.2f} km)"
+    ax.set_title("Trajectories of Parcels Missing the Receptor" + title_suffix)
+
+    sm = plt.cm.ScalarMappable(cmap=ListedColormap(palette), norm=BoundaryNorm(color_bins, len(palette)))
+    sm.set_array([])
+    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    tick_centers = color_bins[:-1] + 0.5 * np.diff(color_bins)
+    cb = plt.colorbar(sm, cax=cax, orientation="horizontal", boundaries=color_bins, ticks=tick_centers)
+    cb.set_ticklabels([f"{val/1000.0:.1f}" for val in tick_centers])
+    cb.set_label("Initial Height in Plume (km)")
+
+    fig.savefig(out_path, dpi=figure_dpi)
+    plt.close(fig)
+    return True
 
 
 def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, lat_deg, lon_deg, out_path, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, cmap_name="rainbow", source_lat=None, source_lon=None):
@@ -1037,13 +1169,73 @@ def plot_mpas_deposited_parcels_by_hour(
     return True
 
 
-def plot_emission_matrix(emission, time_edges, z_bins, out_path, figure_dpi=200, colorbar_label="Parcel count"):
-    fig, ax = plt.subplots(figsize=(10, 8))
-    mesh = ax.pcolormesh(time_edges, np.asarray(z_bins, dtype=float) / 1000.0, emission, shading="auto", cmap="viridis")
+def plot_emission_matrix(emission, time_edges, z_edges_km, out_path, figure_dpi=200, colorbar_label="Parcel count", total_parcels=None):
+    emission = np.asarray(emission, dtype=float)
+    if emission.size == 0:
+        _diag("Emission matrix empty; skipping figure generation.")
+        return
+    time_edges = np.asarray(time_edges, dtype=float)
+    z_edges_km = np.asarray(z_edges_km, dtype=float)
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.pcolormesh(
+        time_edges,
+        z_edges_km,
+        emission,
+        alpha=0.08,
+        zorder=2,
+        edgecolors="grey",
+        linewidth=0.2,
+        shading="flat",
+    )
+    max_count = float(np.nanmax(emission))
+    if not np.isfinite(max_count) or max_count <= 0:
+        max_count = 1.0
+    n_bins = min(10, max(3, int(np.ceil(max_count))))
+    boundaries = np.linspace(0.0, max_count, n_bins + 1)
+    original_cmap = plt.get_cmap("viridis", n_bins)
+    new_colors = original_cmap(np.linspace(0, 1, n_bins))
+    new_colors[-1] = (1, 1, 1, 1)
+    first_color = new_colors[0].copy()
+    new_colors[0] = new_colors[-1]
+    new_colors[-1] = first_color
+    cmap = ListedColormap(new_colors)
+    norm = BoundaryNorm(boundaries, cmap.N, clip=True)
+    cs = ax.pcolormesh(
+        time_edges,
+        z_edges_km,
+        emission,
+        cmap=cmap,
+        norm=norm,
+        shading="flat",
+    )
+    ax.set_ylabel("Altitude (km)")
     ax.set_xlabel("Time")
-    ax.set_ylabel("Height, km")
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
-    plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
+    if total_parcels is not None:
+        ax.text(
+            0.01,
+            0.98,
+            f"Total parcels reaching receptor: {total_parcels}",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=9,
+            bbox=dict(facecolor="white", alpha=0.6, edgecolor="none"),
+        )
+    ax.set_ylim(z_edges_km[0], z_edges_km[-1])
+    ax.set_xticks(time_edges[:-1])
+    ax.set_xticklabels([f"{val:.1f}" for val in time_edges[:-1]], rotation=90, ha="center", fontsize=6)
+    tick_vals = boundaries
+    if tick_vals.size > 15:
+        step = int(np.ceil(tick_vals.size / 15))
+        tick_vals = tick_vals[::step]
+    cbar = plt.colorbar(
+        cs,
+        ax=ax,
+        label=colorbar_label,
+        boundaries=boundaries,
+        ticks=tick_vals,
+        spacing="proportional",
+    )
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
 
@@ -1153,18 +1345,141 @@ def run_backtraj(args):
     )
 
     if args.trajectory_figure:
-        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], parcels_init["z_init"], args.trajectory_figure, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="MPAS parcel trajectories", colorbar_label=args.colorbar_label, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        init_h_km = np.asarray(parcels_init["z_init"], dtype=float) / 1000.0
+        finite_init_h = init_h_km[np.isfinite(init_h_km)]
+        title_suffix = ""
+        if finite_init_h.size:
+            title_suffix = f" (min={float(np.nanmin(finite_init_h)):.2f} km, max={float(np.nanmax(finite_init_h)):.2f} km)"
+        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], init_h_km, args.trajectory_figure, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="Parcel Trajectories colored by Initial Plume Height" + title_suffix, colorbar_label="Initial height in plume (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
         _diag(f"Trajectory figure saved to '{args.trajectory_figure}'.")
 
     if args.trajectory_age:
-        ages = np.maximum((times_arr[start_idx] - result["arrival_time"]) / 3600.0, 0.0)
-        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], ages[result["arrived"]], args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="MPAS trajectories by age", colorbar_label="Age, h", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        start_sec = float((times_arr[start_idx] - times_arr[0]) / np.timedelta64(1, "s"))
+        ages = np.maximum((start_sec - result["arrival_time"]) / 3600.0, 0.0)
+        age_subset = ages[result["arrived"]]
+        age_suffix = ""
+        if age_subset.size:
+            age_suffix = f" (min={float(np.nanmin(age_subset)):.2f} h, max={float(np.nanmax(age_subset)):.2f} h)"
+        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], age_subset, args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="Parcel trajectories coloured by arrival age" + age_suffix, colorbar_label="Arrival age (hours)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
         _diag(f"Parcel-age figure saved to '{args.trajectory_age}'.")
 
+    if args.hourly_figures:
+        n_hourly = plot_mpas_hourly_snapshots(
+            lat,
+            lon,
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_active"],
+            result["trajectory_z"],
+            result["trajectory_times"],
+            result["trajectory_time_indices"],
+            args.hourly_output_dir,
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+        )
+        _diag(f"Hourly snapshots saved: {n_hourly} file(s) in '{args.hourly_output_dir}'.")
+
+    arrived_mask = np.asarray(result["arrived"], dtype=bool)
+    arrived_indices = np.where(arrived_mask)[0]
+    arrival_time_sec = np.asarray(result["arrival_time"], dtype=float)[arrived_mask]
+    arrival_z_m = np.asarray(result["arrival_z"], dtype=float)[arrived_mask]
+
+    start_sec = float((times_arr[start_idx] - times_arr[0]) / np.timedelta64(1, "s"))
+    arrival_age_hours = np.maximum((start_sec - arrival_time_sec) / 3600.0, 0.0)
+    emission_time_hours = np.maximum(arrival_time_sec, 0.0) / 3600.0
+
+    parcel_mass_all = np.asarray(parcels_init.get("mass", np.ones(parcels_init["z"].size)), dtype=float)
+    arrival_mass = parcel_mass_all[arrived_mask]
+    if args.efolding_days is not None and args.efolding_days > 0:
+        efolding_time_sec = float(args.efolding_days) * 86400.0
+        parcel_age_sec = np.maximum(start_sec - arrival_time_sec, 0.0)
+        mass_correction_factor = np.exp(parcel_age_sec / efolding_time_sec)
+        arrival_mass = arrival_mass * mass_correction_factor
+        _diag(f"Applied mass correction with e-folding time of {args.efolding_days} days.")
+
+    if args.trajectory_emission_time_figure:
+        em_subset = emission_time_hours[np.isfinite(emission_time_hours)]
+        em_suffix = ""
+        if em_subset.size:
+            em_suffix = f" (min={float(np.nanmin(em_subset)):.2f} h, max={float(np.nanmax(em_subset)):.2f} h)"
+        plot_mpas_trajectories(
+            column,
+            lat,
+            lon,
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_active"],
+            arrived_indices,
+            emission_time_hours,
+            args.trajectory_emission_time_figure,
+            threshold=args.threshold,
+            receptor_lat=args.receptor_lat,
+            receptor_lon=args.receptor_lon,
+            receptor_radius_m=args.receptor_radius,
+            seed_bbox=seed_bbox,
+            title="Parcel trajectories coloured by emission time" + em_suffix,
+            colorbar_label="Emission time since reference (hours)",
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+        )
+        _diag(f"Parcel emission-time figure saved to '{args.trajectory_emission_time_figure}'.")
+
+    if args.trajectory_arrival_height_figure:
+        ah_subset = arrival_z_m[np.isfinite(arrival_z_m)] / 1000.0
+        ah_suffix = ""
+        if ah_subset.size:
+            ah_suffix = f" (min={float(np.nanmin(ah_subset)):.2f} km, max={float(np.nanmax(ah_subset)):.2f} km)"
+        plot_mpas_trajectories(
+            column,
+            lat,
+            lon,
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_active"],
+            arrived_indices,
+            arrival_z_m / 1000.0,
+            args.trajectory_arrival_height_figure,
+            threshold=args.threshold,
+            receptor_lat=args.receptor_lat,
+            receptor_lon=args.receptor_lon,
+            receptor_radius_m=args.receptor_radius,
+            seed_bbox=seed_bbox,
+            title="Parcel trajectories coloured by arrival height" + ah_suffix,
+            colorbar_label="Arrival height (km)",
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+        )
+        _diag(f"Parcel arrival-height figure saved to '{args.trajectory_arrival_height_figure}'.")
+
+    if args.missed_trajectory_figure:
+        saved_missed = plot_mpas_missed_trajectories(
+            column,
+            lat,
+            lon,
+            result["trajectory_lon"],
+            result["trajectory_lat"],
+            result["trajectory_active"],
+            arrived_mask,
+            np.asarray(parcels_init["z_init"], dtype=float),
+            args.missed_trajectory_figure,
+            threshold=args.threshold,
+            receptor_lat=args.receptor_lat,
+            receptor_lon=args.receptor_lon,
+            receptor_radius_m=args.receptor_radius,
+            seed_bbox=seed_bbox,
+            z_min=args.z_min,
+            z_max=args.z_max,
+            figure_dpi=args.figure_dpi,
+            map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
+        )
+        if saved_missed:
+            _diag(f"Missed trajectory figure saved to '{args.missed_trajectory_figure}'.")
+        else:
+            _diag("No missed parcels found; skipping missed-trajectory figure.")
+
     if args.output_txt:
-        arrived = result["arrived"]
-        arrival_z = result["arrival_z"][arrived]
-        arrival_time = result["arrival_time"][arrived]
+        arrival_z = arrival_z_m
+        arrival_time = arrival_time_sec
         z_bins = zmid[np.argmin(np.abs(lat - args.receptor_lat) + np.abs(lon - args.receptor_lon))]
         z_edges = np.concatenate(([max(0.0, z_bins[0] - 0.5 * (z_bins[1] - z_bins[0]))], 0.5 * (z_bins[:-1] + z_bins[1:]), [z_bins[-1] + 0.5 * (z_bins[-1] - z_bins[-2])]))
         t_sec = np.maximum(arrival_time, 0.0)
@@ -1172,10 +1487,12 @@ def run_backtraj(args):
         if t_edges.size < 2:
             t_edges = np.array([0.0, args.arrival_bin_minutes * 60.0])
         emission = np.zeros((z_edges.size - 1, t_edges.size - 1), dtype=float)
+        mass_emission = np.zeros_like(emission)
         if t_sec.size:
             t_bin = np.clip(np.digitize(t_sec, t_edges) - 1, 0, t_edges.size - 2)
             z_bin = np.clip(np.digitize(arrival_z, z_edges) - 1, 0, z_edges.size - 2)
             np.add.at(emission, (z_bin, t_bin), 1.0)
+            np.add.at(mass_emission, (z_bin, t_bin), arrival_mass)
         with open(args.output_txt, "w", encoding="utf-8") as fh:
             fh.write("time " + " ".join(f"{v:.0f}" for v in t_edges[:-1]) + "\n")
             fh.write("height " + " ".join(f"{v:.1f}" for v in z_edges[:-1] / 1000.0) + "\n")
@@ -1183,8 +1500,18 @@ def run_backtraj(args):
                 fh.write(" ".join(f"{int(v)}" for v in row) + "\n")
         _diag(f"Time-height emission series written to '{args.output_txt}'.")
         if args.output_figure:
-            plot_emission_matrix(emission, t_edges / 3600.0, z_edges / 1000.0, args.output_figure, args.figure_dpi, colorbar_label=args.colorbar_label)
+            plot_emission_matrix(emission, t_edges / 3600.0, z_edges / 1000.0, args.output_figure, args.figure_dpi, colorbar_label=args.colorbar_label, total_parcels=int(np.count_nonzero(arrived_mask)))
             _diag(f"Emission matrix figure saved to '{args.output_figure}'.")
+        if args.mass_output_txt:
+            with open(args.mass_output_txt, "w", encoding="utf-8") as fh:
+                fh.write("time " + " ".join(f"{v:.0f}" for v in t_edges[:-1]) + "\n")
+                fh.write("height " + " ".join(f"{v:.1f}" for v in z_edges[:-1] / 1000.0) + "\n")
+                for row in mass_emission[::-1]:
+                    fh.write(" ".join(f"{v:.6e}" for v in row) + "\n")
+            _diag(f"Mass-weighted emission series written to '{args.mass_output_txt}'.")
+        if args.mass_figure:
+            plot_emission_matrix(mass_emission, t_edges / 3600.0, z_edges / 1000.0, args.mass_figure, args.figure_dpi, colorbar_label="Parcel mass")
+            _diag(f"Mass-weighted emission figure saved to '{args.mass_figure}'.")
 
     if args.state_pickle:
         args_dict = {k: getattr(args, k) for k in vars(args)}
@@ -1223,7 +1550,7 @@ def run_backtraj(args):
             ),
             emission=dict(
                 matrix=emission_matrix,
-                mass_matrix=None,
+                mass_matrix=locals().get("mass_emission"),
                 time_edges=(t_edges / 3600.0) if t_edges is not None else None,
                 z_bins=(z_edges / 1000.0) if z_edges is not None else None,
                 total_parcels=int(result["arrived"].sum()),

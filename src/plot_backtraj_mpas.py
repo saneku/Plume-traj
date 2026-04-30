@@ -7,6 +7,7 @@ import numpy as np
 from .plume_mpas import (
     plot_emission_matrix,
     plot_mpas_column_and_parcels,
+    plot_mpas_hourly_snapshots,
     plot_mpas_trajectories,
     plot_mpas_vertical_distribution,
 )
@@ -34,7 +35,7 @@ def main(args):
     if map_extent is not None:
         map_extent = tuple(map_extent)
     seed_bbox = tuple(script_args["seed_bbox"]) if script_args.get("seed_bbox") else None
-    dpi = int(script_args.get("figure_dpi", 200))
+    dpi = int(args.figure_dpi) if getattr(args, "figure_dpi", None) is not None else int(script_args.get("figure_dpi", 200))
 
     plot_mpas_column_and_parcels(
         column,
@@ -119,4 +120,25 @@ def main(args):
             script_args.get("z_min"),
             script_args.get("z_max"),
             dpi,
+        )
+
+    if args.hourly_figures:
+        n_hourly = plot_mpas_hourly_snapshots(
+            lat,
+            lon,
+            traj_lon,
+            traj_lat,
+            trajectories["active"],
+            trajectories["z"],
+            trajectories["times"],
+            trajectories["time_indices"],
+            args.hourly_output_dir,
+            figure_dpi=dpi,
+            map_extent=map_extent,
+            source_lat=script_args.get("source_lat"),
+            source_lon=script_args.get("source_lon"),
+        )
+        print(
+            "[diag] Hourly snapshots re-plotted: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}'."
         )
