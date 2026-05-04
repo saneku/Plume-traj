@@ -12,6 +12,7 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 from netCDF4 import Dataset
 from scipy.spatial import cKDTree
 
+from misc.map_style import apply_map_style
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 from .plume_base import PlumeBackend
 from .plotting_base import plot_seed_bbox
@@ -30,6 +31,12 @@ TRAJECTORY_ALPHA = 0.65
 
 def _diag(msg):
     print(f"[diag] {msg}")
+
+
+def _ensure_parent_dir(path):
+    if not path:
+        return
+    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _expand_input_paths(input_args):
@@ -466,15 +473,7 @@ def _setup_geo_axes(lat_deg, lon_deg, map_extent=None, figsize=(10, 8)):
     else:
         west, south, east, north = map_extent
         ax.set_extent([west, east, south, north], crs=PLATE_CARREE)
-    ax.coastlines(resolution="50m", linewidth=0.6, color="gray")
-    try:
-        import cartopy.feature as cfeature
-        ax.add_feature(cfeature.BORDERS.with_scale("50m"), linewidth=0.4, edgecolor="gray")
-    except Exception:
-        pass
-    gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="gray", alpha=0.4, linestyle="--")
-    gl.top_labels = False
-    gl.right_labels = False
+    apply_map_style(ax, draw_labels=False, label_size=10)
     return fig, ax
 
 
@@ -700,8 +699,8 @@ def plot_mpas_missed_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, 
         )
 
     plot_seed_bbox(ax, seed_bbox)
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     finite_init = init_heights_arr[np.isfinite(init_heights_arr)]
     title_suffix = ""
     if finite_init.size:
@@ -802,8 +801,8 @@ def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indice
 
     ax.set_title(title or "Parcel trajectories")
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
 
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     tick_centers = bins[:-1] + 0.5 * np.diff(bins)
@@ -936,8 +935,8 @@ def plot_mpas_trajectories_by_age(
             transform=PLATE_CARREE,
         )
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     ax.set_title("Parcel trajectories coloured by age since release")
 
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
@@ -1245,8 +1244,8 @@ def plot_mpas_deposited_parcels_by_hour(
             zorder=9,
             transform=PLATE_CARREE,
         )
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     ax.set_title(
         "Deposited parcels coloured by deposition hour "
         f"(n={lon_dep.size}, min={hmin:.1f} h, max={hmax:.1f} h)"
@@ -1389,6 +1388,22 @@ def run_backtraj(args):
         _diag("Column scaling factor = 1.0 (no change).")
 
     seed_bbox = tuple(args.seed_bbox) if args.seed_bbox is not None else None
+    for out_path in (
+        args.seeds_figure,
+        args.seeds_vertical_figure,
+        args.trajectory_figure,
+        args.trajectory_age,
+        args.trajectory_emission_time_figure,
+        args.trajectory_arrival_height_figure,
+        args.missed_trajectory_figure,
+        args.output_txt,
+        args.output_figure,
+        args.mass_output_txt,
+        args.mass_figure,
+        args.state_pickle,
+    ):
+        _ensure_parent_dir(out_path)
+
     parcels_init = generate_parcels_from_column(column, lat, lon, zmid, start_idx, args.threshold, args.n_columns, args.n_vert, args.z_min, args.z_max, seed_bbox=seed_bbox)
     _diag(
         "Initialized "
@@ -1457,7 +1472,7 @@ def run_backtraj(args):
         plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], age_subset, args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="Parcel trajectories coloured by arrival age" + age_suffix, colorbar_label="Arrival age (hours)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
         _diag(f"Parcel-age figure saved to '{args.trajectory_age}'.")
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         n_hourly = plot_mpas_hourly_snapshots(
             lat,
             lon,
@@ -1705,6 +1720,16 @@ def run_forwtraj(args):
     parcels = generate_parcels_from_point(lon[src_idx], lat[src_idx], src_idx, args.n_vert, args.z_min, args.z_max)
     _diag(f"Initialized {parcels['lon'].size} MPAS parcels.")
 
+    for out_path in (
+        getattr(args, "seeds_figure", None),
+        args.seeds_vertical_figure,
+        args.initial_height_figure,
+        args.age_figure,
+        args.deposition_figure,
+        args.state_pickle,
+    ):
+        _ensure_parent_dir(out_path)
+
     _diag("Starting MPAS forward advection.")
     result = advect_parcels_forward(
         parcels,
@@ -1726,7 +1751,7 @@ def run_forwtraj(args):
     if args.seeds_vertical_figure:
         plot_mpas_vertical_distribution(parcels, args.seeds_vertical_figure, args.z_min, args.z_max, args.figure_dpi)
         _diag(f"Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon, tail_enabled=True, tail_steps=6)
         _diag(f"Hourly snapshots saved: {n_hourly} file(s) in '{args.hourly_output_dir}'.")
     if args.initial_height_figure:

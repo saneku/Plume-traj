@@ -31,7 +31,7 @@ def main(args):
         map_extent = tuple(map_extent)
     dpi = max(50, int(args.figure_dpi if args.figure_dpi is not None else script_args.get("figure_dpi", 200)))
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         plot_mpas_hourly_snapshots(
             lat,
             lon,

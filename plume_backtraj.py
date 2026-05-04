@@ -33,7 +33,7 @@ python plume_backtraj.py \
   --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
   --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
   --map-extent 30 5 65 30 \
-  --hourly-figures \
+  --hourly-output-dir "$outdir/hourly" \
   --seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png"
 
 Example MPAS SO2 run:
@@ -68,7 +68,7 @@ python plume_backtraj.py \
   --missed-trajectory-figure "$outdir/so2_missed_trajectories.png" \
   --figure-dpi 300 --state-pickle "$outdir/run_so2.pkl" \
   --map-extent 30 5 65 30 \
-  --hourly-figures \
+  --hourly-output-dir "$outdir/hourly" \
   --seeds-vertical-figure "$outdir/parcel_initial_vertical_distribution.png"
 
 

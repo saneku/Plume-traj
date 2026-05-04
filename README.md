@@ -44,7 +44,7 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Plot outputs and diagnostics
 - Re-plotting from saved pickle state
 - Optional `--map-extent WEST SOUTH EAST NORTH` override for custom map bounds
-- Optional forward hourly snapshots with `--hourly-figures`
+- Optional hourly snapshots by setting `--hourly-output-dir <dir>`
 - Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
 - Select the meteorology backend with `--target wrf` or `--target mpas`
 - MPAS mode reads `history*.nc` files with `latCell`, `lonCell`, `zgrid`, `uReconstructZonal`, `uReconstructMeridional`, and `w`
@@ -53,7 +53,7 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 
 ## Output Files
 
-The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. In forward mode, `--hourly-figures` saves hourly parcel-location maps named `parcel_positions_hour.XXXX.png` (output location controlled by `--hourly-output-dir`), and `--deposition-figure` saves a deposited-parcel-only map colored by deposition hour since release. Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
+The scripts write PNG figures (trajectories, 2d matrices, and diagnostics) in the current working directory unless you provide explicit output paths. Hourly parcel-location maps are saved only when `--hourly-output-dir` is set, using `parcel_positions_hour.XXXX.png` in that directory. `--deposition-figure` saves a deposited-parcel-only map colored by deposition hour since release. Pickle files (`--state-pickle`) are saved where you specify and can be used to replot without re-running the advection.
 
 ## Compact Run Sheet
 

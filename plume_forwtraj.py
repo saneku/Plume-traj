@@ -21,7 +21,6 @@ python plume_forwtraj.py \
   --deposition-figure wrf_deposited_by_hour.png \
   --initial-height-figure wrf_plume_initial_height_colored.png \
   --seeds-vertical-figure wrf_parcel_initial_vertical_distribution.png \
-  --hourly-figures \
   --hourly-output-dir wrf_hourly \
   --state-pickle wrf_forward_run.pkl \
   --map-extent 30 5 65 30 \
@@ -47,7 +46,6 @@ python plume_forwtraj.py \
     --deposition-figure mpas_deposited_by_hour.png \
     --initial-height-figure mpas_plume_initial_height_colored.png \
     --seeds-vertical-figure mpas_parcel_initial_vertical_distribution.png \
-    --hourly-figures \
     --hourly-output-dir mpas_hourly \
     --state-pickle mpas_forward_run.pkl \
     --map-extent 30 5 65 30 \

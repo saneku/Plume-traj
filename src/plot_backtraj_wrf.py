@@ -29,14 +29,12 @@ def parse_args():
         help="Optional map extent override (west/south/east/north bounds) for all plots.",
     )
     parser.add_argument(
-        "--hourly-figures",
-        action="store_true",
-        help="Re-generate hourly parcel snapshot plots from the saved state.",
-    )
-    parser.add_argument(
         "--hourly-output-dir",
-        default="hourly_replot",
-        help="Output directory for re-generated hourly snapshot images.",
+        default=None,
+        help=(
+            "If set, re-generate hourly parcel snapshot plots from the saved state "
+            "into this output directory."
+        ),
     )
     parser.add_argument(
         "--figure-dpi",
@@ -299,7 +297,7 @@ def main(args=None):
                 f.write(row_vals + "\n")
         print("Mass-weighted emission series written to 'mass_matrix_replot.txt'.")
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         traj = state["trajectories"]
         traj_times_utc = None
         traj_times = np.asarray(traj["times"])

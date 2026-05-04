@@ -188,8 +188,8 @@ Full argument list:
 - `--state-pickle` (optional)  
   Path to a pickle file where the script will store all essential inputs and computed outputs (column field, trajectories, emission matrix, etc.). You can load this file later to regenerate figures without rerunning the back-trajectory calculations.
 
-- `--hourly-figures` (flag)  
-  When provided, saves hourly parcel-location maps during the backward advection loop (`parcel_positions_hour_XXX.png`).
+- `--hourly-output-dir` (optional)  
+  When set, saves hourly parcel-location maps during the backward advection loop (`parcel_positions_hour_XXX.png`) into the provided directory.
 
 - `--colorbar-label` (default: `Parcel count`)  
   Label applied to the column-field colorbars (initial parcel map, hourly snapshots) and to the emission-matrix colorbar. The mass-weighted emission figure always uses the label “Parcel mass”.
@@ -336,7 +336,7 @@ Cells with no arrivals remain `0.0`. Diagnostic messages print both the total pa
 ### 4.5 Diagnostics and figures
 
 - **Initial parcel map** (`parcel_locations_tXXX.png`): shows the column field (scaled by `--column-coef`), the threshold contour (white dash-dot), receptor location/circle, and all initial parcels. The colorbar label for this and any other column-field plot comes from `--colorbar-label`.
-- **Hourly snapshots** (`--hourly-figures`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index). This is controlled by the `--hourly-figures` flag.
+- **Hourly snapshots** (`--hourly-output-dir`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index). This is enabled when `--hourly-output-dir` is provided.
 - **Trajectory figure** (`--trajectory-figure`): plots only those parcels that reached the receptor. Their paths and starting markers are coloured by launch height using 10 evenly spaced intervals between `--z-min` and `--z-max`, with a horizontal rainbow legend for the initial-height bins. Only the start points are highlighted (no terminal markers), emphasizing where each parcel originated. The rendering is heavily optimized using `matplotlib.collections.LineCollection` to draw all trajectories at once, making it efficient even for thousands of parcels.
 - **Parcel-age figure** (`--trajectory-age`, optional): second Cartopy panel where the same trajectories are coloured by their arrival age. Ten evenly spaced time bins drive a horizontal `gist_ncar` legend (labelled in hours), giving a quick view of how long each parcel needed to reach the receptor.
 - **Emission-time figure** (`--trajectory-emission-time-figure`, optional): Cartopy panel where trajectories are coloured by emission time (hours since `--emission-start`). The colorbar labels the emission reference time when supplied.

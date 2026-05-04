@@ -21,7 +21,6 @@ python misc/aggregate_forwtraj.py \
   --age-figure plume_age_colored_aggregate.png \
   --seeds-vertical-figure seeds_vertical_aggregate.png \
   --deposition-figure deposited_by_hour_aggregate.png \
-  --hourly-figures \
   --hourly-output-dir ./hourly_maps_aggregate \
   --map-extent 30 5 65 30
 '''
@@ -74,17 +73,12 @@ def parse_args():
         help="Optional PNG for the initial vertical distribution of parcels.",
     )
     parser.add_argument(
-        "--hourly-figures",
-        action="store_true",
-        help=(
-            "Save parcel-location maps at each whole hour since release. "
-            "Each map uses the nearest available trajectory snapshot."
-        ),
-    )
-    parser.add_argument(
         "--hourly-output-dir",
-        default=".",
-        help="Output directory for hourly snapshot images.",
+        default=None,
+        help=(
+            "If set, save parcel-location maps at each whole hour since release to "
+            "this output directory."
+        ),
     )
     parser.add_argument(
         "--map-extent",
@@ -370,7 +364,7 @@ def main():
         if init_heights is not None:
             init_heights = np.asarray(init_heights)
 
-        if args.hourly_figures:
+        if args.hourly_output_dir:
             n_hourly = plot_mpas_hourly_snapshots(
                 lat_deg,
                 lon_deg,
@@ -458,7 +452,7 @@ def main():
             )
         return
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         traj_times_utc = None
         start_time_utc = state.get("metadata", {}).get("start_time")
         if start_time_utc is not None:

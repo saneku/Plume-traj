@@ -43,17 +43,12 @@ def parse_args():
         help="Optional PNG for the initial vertical distribution of parcels.",
     )
     parser.add_argument(
-        "--hourly-figures",
-        action="store_true",
-        help=(
-            "Save parcel-location maps at each whole hour since release. "
-            "Each map uses the nearest available trajectory snapshot."
-        ),
-    )
-    parser.add_argument(
         "--hourly-output-dir",
-        default=".",
-        help="Output directory for hourly snapshot images.",
+        default=None,
+        help=(
+            "If set, save parcel-location maps at each whole hour since release to "
+            "this output directory."
+        ),
     )
     parser.add_argument(
         "--map-extent",
@@ -108,7 +103,7 @@ def main(args=None):
         if map_extent is not None:
             map_extent = tuple(map_extent)
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         traj_times_utc = None
         start_time_utc = state.get("metadata", {}).get("start_time")
         if start_time_utc is not None:

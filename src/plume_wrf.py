@@ -23,10 +23,10 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import BoundaryNorm, ListedColormap
 import numpy as np
 import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 from netCDF4 import Dataset
 from scipy.interpolate import RegularGridInterpolator
 
+from misc.map_style import apply_map_style
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 from .plotting_base import normalize_map_extent, plot_seed_bbox
 from .plume_base import PlumeBackend
@@ -43,6 +43,13 @@ def _format_time_str(val):
 def _diag(msg: str) -> None:
     """Lightweight diagnostic logger."""
     print(f"[diag] {msg}")
+
+
+def _ensure_parent_dir(path: str | None) -> None:
+    """Create parent directory for an output path when needed."""
+    if not path:
+        return
+    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _expand_wrfout_paths(input_args):
@@ -152,6 +159,8 @@ PARCEL_MARKER_LINEWIDTH = 0.2
 TRAJECTORY_LINEWIDTH = 0.6
 TRAJECTORY_LINESTYLE = "-"
 TRAJECTORY_ALPHA = 0.5
+TRAJECTORY_ZORDER = 9
+TRAJECTORY_MARKER_ZORDER = 9.5
 
 
 PLATE_CARREE = ccrs.PlateCarree()
@@ -172,7 +181,7 @@ def _init_geo_axes(
     figsize=(10, 8),
     map_extent=None,
 ):
-    """Initialize a Cartopy PlateCarree map with coastlines, borders, and gridlines."""
+    """Initialize a Cartopy PlateCarree map with shared style formatting."""
     fig, ax = plt.subplots(
         figsize=figsize,
         subplot_kw={"projection": PLATE_CARREE},
@@ -184,19 +193,7 @@ def _init_geo_axes(
             [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
             crs=PLATE_CARREE,
         )
-    ax.coastlines(resolution="50m", linewidth=0.6, color="gray")
-    ax.add_feature(cfeature.BORDERS.with_scale("50m"), linewidth=0.4, edgecolor="gray")
-    gl = ax.gridlines(
-        draw_labels=True,
-        linewidth=0.3,
-        color="gray",
-        alpha=0.4,
-        linestyle="--",
-    )
-    gl.top_labels = False
-    gl.right_labels = False
-    gl.xlabel_style = {"size": 10}
-    gl.ylabel_style = {"size": 10}
+    apply_map_style(ax, draw_labels=False, label_size=10)
     return fig, ax
 
 
@@ -1028,19 +1025,16 @@ def plot_parcel_locations(
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
 
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    if map_extent is not None:
-        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
-    else:
-        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
-
+    fig, ax = _init_geo_axes(
+        lon_min,
+        lon_max,
+        lat_min,
+        lat_max,
+        lon_pad,
+        lat_pad,
+        map_extent=map_extent,
+    )
     mesh = ax.pcolormesh(xlon, xlat, column2d, shading="auto", cmap="plasma", transform=ccrs.PlateCarree())
-    ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
-    ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
-    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color='gray', alpha=0.5, linestyle='--')
-    gl.top_labels = False
-    gl.right_labels = False
 
     if threshold is not None:
         ax.contour(
@@ -1370,18 +1364,15 @@ def plot_parcel_trajectories(
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
 
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    if map_extent is not None:
-        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
-    else:
-        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
-
-    ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
-    ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
-    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color='gray', alpha=0.5, linestyle='--')
-    gl.top_labels = False
-    gl.right_labels = False
+    fig, ax = _init_geo_axes(
+        lon_min,
+        lon_max,
+        lat_min,
+        lat_max,
+        lon_pad,
+        lat_pad,
+        map_extent=map_extent,
+    )
 
     if threshold is not None:
         ax.contour(xlon, xlat, column2d, levels=[threshold], colors="black", linewidths=1.2, transform=ccrs.PlateCarree())
@@ -1442,6 +1433,7 @@ def plot_parcel_trajectories(
                 linewidth=TRAJECTORY_LINEWIDTH,
                 alpha=TRAJECTORY_ALPHA,
                 transform=ccrs.PlateCarree(),
+                zorder=TRAJECTORY_ZORDER,
             )
             ax.add_collection(lc)
 
@@ -1456,7 +1448,7 @@ def plot_parcel_trajectories(
             c=start_colors,
             edgecolors=PARCEL_MARKER_EDGE,
             linewidths=PARCEL_MARKER_LINEWIDTH,
-            zorder=6,
+            zorder=TRAJECTORY_MARKER_ZORDER,
             transform=ccrs.PlateCarree(),
             alpha=PARCEL_MARKER_ALPHA,
         )
@@ -1476,8 +1468,8 @@ def plot_parcel_trajectories(
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     min_init = float(np.nanmin(init_heights_subset)) if init_heights_subset is not None else float("nan")
     max_init = float(np.nanmax(init_heights_subset)) if init_heights_subset is not None else float("nan")
     title_suffix = ""
@@ -1573,18 +1565,15 @@ def plot_parcel_age_map(
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
 
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    if map_extent is not None:
-        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
-    else:
-        ax.set_extent([lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad], crs=ccrs.PlateCarree())
-
-    ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
-    ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
-    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color='gray', alpha=0.5, linestyle='--')
-    gl.top_labels = False
-    gl.right_labels = False
+    fig, ax = _init_geo_axes(
+        lon_min,
+        lon_max,
+        lat_min,
+        lat_max,
+        lon_pad,
+        lat_pad,
+        map_extent=map_extent,
+    )
 
     if threshold is not None:
         ax.contour(xlon, xlat, column2d, levels=[threshold], colors="black", linewidths=1.2, transform=ccrs.PlateCarree())
@@ -1623,6 +1612,7 @@ def plot_parcel_age_map(
         linewidth=TRAJECTORY_LINEWIDTH,
         alpha=TRAJECTORY_ALPHA,
         transform=ccrs.PlateCarree(),
+        zorder=TRAJECTORY_ZORDER,
     )
     ax.add_collection(lc)
 
@@ -1635,7 +1625,7 @@ def plot_parcel_age_map(
         c=parcel_colors,
         edgecolors=PARCEL_MARKER_EDGE,
         linewidths=PARCEL_MARKER_LINEWIDTH,
-        zorder=6,
+        zorder=TRAJECTORY_MARKER_ZORDER,
         transform=ccrs.PlateCarree(),
         alpha=PARCEL_MARKER_ALPHA,
     )
@@ -1655,8 +1645,8 @@ def plot_parcel_age_map(
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     min_age = float(np.nanmin(ages_subset)) if ages_subset.size else float("nan")
     max_age = float(np.nanmax(ages_subset)) if ages_subset.size else float("nan")
     title_suffix = ""
@@ -1752,21 +1742,15 @@ def plot_parcel_emission_time_map(
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
 
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-    if map_extent is not None:
-        ax.set_extent(_normalize_map_extent(map_extent), crs=ccrs.PlateCarree())
-    else:
-        ax.set_extent(
-            [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
-            crs=ccrs.PlateCarree(),
-        )
-
-    ax.add_feature(cfeature.COASTLINE, color="gray", linewidth=0.5)
-    ax.add_feature(cfeature.BORDERS, color="gray", linewidth=0.4)
-    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color="gray", alpha=0.5, linestyle="--")
-    gl.top_labels = False
-    gl.right_labels = False
+    fig, ax = _init_geo_axes(
+        lon_min,
+        lon_max,
+        lat_min,
+        lat_max,
+        lon_pad,
+        lat_pad,
+        map_extent=map_extent,
+    )
 
     if threshold is not None:
         ax.contour(
@@ -1813,6 +1797,7 @@ def plot_parcel_emission_time_map(
         linewidth=TRAJECTORY_LINEWIDTH,
         alpha=TRAJECTORY_ALPHA,
         transform=ccrs.PlateCarree(),
+        zorder=TRAJECTORY_ZORDER,
     )
     ax.add_collection(lc)
 
@@ -1825,7 +1810,7 @@ def plot_parcel_emission_time_map(
         c=parcel_colors,
         edgecolors=PARCEL_MARKER_EDGE,
         linewidths=PARCEL_MARKER_LINEWIDTH,
-        zorder=6,
+        zorder=TRAJECTORY_MARKER_ZORDER,
         transform=ccrs.PlateCarree(),
         alpha=PARCEL_MARKER_ALPHA,
     )
@@ -1851,8 +1836,8 @@ def plot_parcel_emission_time_map(
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     min_t = float(np.nanmin(emission_hours))
     max_t = float(np.nanmax(emission_hours))
     title_suffix = ""
@@ -2061,6 +2046,7 @@ def plot_parcel_arrival_height_map(
                 linewidth=TRAJECTORY_LINEWIDTH,
                 alpha=TRAJECTORY_ALPHA,
                 transform=PLATE_CARREE,
+                zorder=TRAJECTORY_ZORDER,
             )
             ax.add_collection(lc)
 
@@ -2073,13 +2059,13 @@ def plot_parcel_arrival_height_map(
             c=parcel_colors,
             edgecolors=PARCEL_MARKER_EDGE,
             linewidths=PARCEL_MARKER_LINEWIDTH,
-            zorder=6,
+            zorder=TRAJECTORY_MARKER_ZORDER,
             transform=PLATE_CARREE,
             alpha=PARCEL_MARKER_ALPHA,
         )
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     min_km = float(np.nanmin(heights_subset_km)) if heights_subset_km.size else float("nan")
     max_km = float(np.nanmax(heights_subset_km)) if heights_subset_km.size else float("nan")
     ax.set_title(
@@ -2235,6 +2221,7 @@ def plot_missed_parcel_trajectories(
             linewidth=TRAJECTORY_LINEWIDTH,
             alpha=TRAJECTORY_ALPHA,
             transform=PLATE_CARREE,
+            zorder=TRAJECTORY_ZORDER,
         )
         ax.add_collection(lc)
 
@@ -2252,7 +2239,7 @@ def plot_missed_parcel_trajectories(
 
     valid_finish = np.isfinite(finish_lon) & np.isfinite(finish_lat)
     ax.scatter(finish_lon[valid_finish], finish_lat[valid_finish], s=PARCEL_MARKER_SIZE, c=finish_colors[valid_finish],
-               marker='o', edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, zorder=7,
+               marker='o', edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, zorder=TRAJECTORY_MARKER_ZORDER,
                transform=ccrs.PlateCarree(), alpha=PARCEL_MARKER_ALPHA,
                label="Final Position (colored by initial height)")
 
@@ -2273,8 +2260,8 @@ def plot_missed_parcel_trajectories(
     _plot_seed_bbox(ax, seed_bbox)
 
     # --- Labels and Colorbar ---
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     finite_init = init_heights_arr[np.isfinite(init_heights_arr)]
     title_suffix = ""
     if finite_init.size:
@@ -2437,14 +2424,12 @@ def parse_backtraj_args():
         ),
     )
     parser.add_argument(
-        "--hourly-figures",
-        action="store_true",
-        help="Save hourly parcel location plots during back-trajectory integration.",
-    )
-    parser.add_argument(
         "--hourly-output-dir",
-        default=".",
-        help="Output directory for hourly snapshot images.",
+        default=None,
+        help=(
+            "If set, save hourly parcel-location maps during back-trajectory integration "
+            "to this output directory."
+        ),
     )
     parser.add_argument(
         "--arrival-bin-minutes",
@@ -2785,7 +2770,7 @@ def run_backtraj(args):
         print(f"[diag] Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
 
     snapshot_config = None
-    if args.hourly_figures:
+    if args.hourly_output_dir:
             snapshot_config = dict(
                 column2d=column2d,
                 xlat=xlat,
@@ -3955,9 +3940,6 @@ def _plot_trajectory_map_base(xlat, xlon, map_extent=None):
     fig, ax = _init_geo_axes(
         lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, map_extent=map_extent
     )
-    gl = ax.gridlines(draw_labels=True, linewidth=0.2, color="gray", alpha=0.5, linestyle="--")
-    gl.top_labels = False
-    gl.right_labels = False
     return fig, ax
 
 
@@ -4102,6 +4084,7 @@ def plot_trajectories_by_height(
             linewidth=TRAJECTORY_LINEWIDTH,
             alpha=FORWARD_TRAJECTORY_ALPHA,
             transform=ccrs.PlateCarree(),
+            zorder=TRAJECTORY_ZORDER,
         )
         ax.add_collection(lc)
 
@@ -4131,14 +4114,14 @@ def plot_trajectories_by_height(
             c="red",
             edgecolors="black",
             linewidths=0.4,
-            zorder=7,
+            zorder=TRAJECTORY_MARKER_ZORDER,
             transform=ccrs.PlateCarree(),
         )
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     min_km = float(np.nanmin(init_heights_m)) / 1000.0
     max_km = float(np.nanmax(init_heights_m)) / 1000.0
     ax.set_title(
@@ -4228,6 +4211,7 @@ def plot_trajectories_by_age(
             linewidth=TRAJECTORY_LINEWIDTH,
             alpha=FORWARD_TRAJECTORY_ALPHA,
             transform=ccrs.PlateCarree(),
+            zorder=TRAJECTORY_ZORDER,
         )
         ax.add_collection(lc)
 
@@ -4257,14 +4241,14 @@ def plot_trajectories_by_age(
             c="red",
             edgecolors="black",
             linewidths=0.4,
-            zorder=7,
+            zorder=TRAJECTORY_MARKER_ZORDER,
             transform=ccrs.PlateCarree(),
         )
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     ax.set_title("Parcel trajectories coloured by age since release")
 
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
@@ -4377,8 +4361,8 @@ def plot_deposited_parcels_by_hour(
 
     _plot_seed_bbox(ax, seed_bbox)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     ax.set_title(
         "Deposited parcels coloured by deposition hour "
         f"(n={lon_dep.size}, min={hmin:.1f} h, max={hmax:.1f} h)"
@@ -4651,8 +4635,8 @@ def plot_hourly_parcel_snapshots(
             )
 
         _plot_seed_bbox(ax, seed_bbox)
-        ax.set_xlabel("Longitude")
-        ax.set_ylabel("Latitude")
+        ax.set_xlabel("")
+        ax.set_ylabel("")
         if traj_times_utc_arr is not None:
             snapshot_utc = traj_times_utc_arr[snap_idx]
             if np.issubdtype(traj_times_utc_arr.dtype, np.datetime64):
@@ -4806,17 +4790,12 @@ def parse_forwtraj_args():
         help="Optional PNG for the initial vertical distribution of parcels.",
     )
     parser.add_argument(
-        "--hourly-figures",
-        action="store_true",
-        help=(
-            "Save parcel-location maps at each whole hour since release. "
-            "Each map uses the nearest available trajectory snapshot."
-        ),
-    )
-    parser.add_argument(
         "--hourly-output-dir",
-        default=".",
-        help="Output directory for hourly snapshot images.",
+        default=None,
+        help=(
+            "If set, save parcel-location maps at each whole hour since release to "
+            "this output directory."
+        ),
     )
     parser.add_argument(
         "--figure-dpi",
@@ -4925,6 +4904,15 @@ def run_forwtraj(args):
         z_max=args.z_max,
     )
 
+    for out_path in (
+        args.seeds_vertical_figure,
+        args.initial_height_figure,
+        args.age_figure,
+        args.deposition_figure,
+        args.state_pickle,
+    ):
+        _ensure_parent_dir(out_path)
+
     if args.seeds_vertical_figure:
         plot_seed_vertical_distribution(
             parcels=parcels_init,
@@ -4988,7 +4976,7 @@ def run_forwtraj(args):
     fig_dpi = max(50, int(args.figure_dpi))
     map_extent = tuple(args.map_extent) if args.map_extent is not None else None
     seed_bbox = tuple(args.seed_bbox) if args.seed_bbox is not None else None
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         traj_times_utc = None
         if np.asarray(times_arr).dtype.kind == "M":
             t_ref_utc = np.asarray(times_arr).astype("datetime64[s]")[0]

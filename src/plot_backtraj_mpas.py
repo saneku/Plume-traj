@@ -122,7 +122,7 @@ def main(args):
             dpi,
         )
 
-    if args.hourly_figures:
+    if args.hourly_output_dir:
         n_hourly = plot_mpas_hourly_snapshots(
             lat,
             lon,

@@ -25,7 +25,7 @@ Aggregates multiple forward-trajectory pickle outputs into one combined trajecto
 - Concatenates parcel trajectories and optional height-history arrays.
 - Regenerates aggregated height-colored and age-colored trajectory maps.
 - Optionally saves deposited parcels only, colored by deposition hour (`--deposition-figure`).
-- Optionally regenerates hourly parcel-location maps (`--hourly-figures`).
+- Optionally regenerates hourly parcel-location maps (`--hourly-output-dir <dir>`).
 - Supports both WRF and MPAS run pickles.
 
 Typical use:
@@ -73,12 +73,22 @@ Reference data module for gravitational settling.
 Typical use:
 - Imported by `plume_backtraj.py` and `plume_forwtraj.py` when `--aer-type` is enabled.
 
+### `map_style.py`
+Shared Cartopy basemap formatter used by both WRF and MPAS plotting paths.
+
+- Centralizes land/ocean palette and feature layers (land, ocean, lakes, rivers, coastline, country boundaries).
+- Centralizes gridline style and label formatting.
+- Imported by `src/plume_wrf.py` and `src/plume_mpas.py` so map styling is consistent across:
+  - runtime plotting (`plume_backtraj.py`, `plume_forwtraj.py`)
+  - replot scripts (`plot_backtraj.py`, `plot_forwtraj.py`)
+  - aggregate scripts in `misc/`.
+
 ## Notes
 
 - Most scripts here are helpers for the main tools in the repository root:
   - `plume_backtraj.py`
   - `plume_forwtraj.py`
-- Forward trajectory runs can now optionally save hourly parcel-location maps via `plume_forwtraj.py --hourly-figures`.
+- Forward trajectory runs can optionally save hourly parcel-location maps by setting `--hourly-output-dir <dir>`.
 - Aggregation and plotting scripts expect pickle structures produced by the current versions of the main scripts.
 - The intended workflow for gridded observations is: clean the source field first, then interpolate it to WRF or MPAS with the matching regrid helper.
 

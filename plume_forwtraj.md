@@ -132,11 +132,8 @@ Full argument list:
 - `--seeds-vertical-figure` (optional)  
   Output PNG for the initial vertical parcel distribution.
 
-- `--hourly-figures` (optional flag)  
-  Save parcel-location maps at each whole hour since release.
-
-- `--hourly-output-dir` (default: `.`)  
-  Output directory for hourly snapshot images.
+- `--hourly-output-dir` (optional)  
+  If provided, save parcel-location maps at each whole hour since release into this output directory.
 
 - `--figure-dpi` (default: `200`)  
   DPI used for all figures.
@@ -183,7 +180,7 @@ The script writes:
 - An age-colored trajectory map (`--age-figure`)
 - Optional deposited-parcel map colored by deposition hour (`--deposition-figure`)
 - Optional initial vertical distribution (`--seeds-vertical-figure`)
-- Optional hourly parcel-location maps (`--hourly-figures`)
+- Optional hourly parcel-location maps (`--hourly-output-dir`)
 - Optional pickle file (`--state-pickle`)
 
 If `--seed-bbox` is used, the bbox outline is drawn on the maps.
@@ -207,14 +204,12 @@ python plot_forwtraj.py forward_run.pkl \
   --age-figure plume_age_colored_replot.png \
   --deposition-figure deposited_parcels_by_hour_replot.png \
   --seeds-vertical-figure seeds_vertical_replot.png \
-  --hourly-figures \
   --hourly-output-dir ./hourly_maps_replot
 ```
 
 Replot helper options now include:
 
-- `--hourly-figures` to regenerate hourly parcel-location maps from the saved state.
-- `--hourly-output-dir` to control where hourly images are written.
+- `--hourly-output-dir` to regenerate hourly parcel-location maps from the saved state and control where hourly images are written.
 - `--deposition-figure` to save only deposited parcels colored by deposition hour.
 
 ---
@@ -294,7 +289,6 @@ python plume_forwtraj.py \
   --z-min 1000 \
   --z-max 23000 \
   --n-vert 30 \
-  --hourly-figures \
   --hourly-output-dir ./hourly_maps
 ```
 

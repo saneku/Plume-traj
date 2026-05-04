@@ -6,6 +6,7 @@ Example:
 python plot_forwtraj.py forward_run.pkl \
   --initial-height-figure my_initial_height.png \
   --age-figure my_age.png \
+  --hourly-output-dir hourly_replot \
   --seeds-vertical-figure seeds_vertical.png \
   --deposition-figure deposited_by_hour_replot.png \
   --map-extent 30 5 65 30 \
