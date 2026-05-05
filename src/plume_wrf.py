@@ -29,7 +29,11 @@ from scipy.interpolate import RegularGridInterpolator
 from misc.map_style import apply_map_style
 from misc.settling_velocity_data import SETTLING_VEL_MS, Z_M
 from .plotting_base import normalize_map_extent, plot_seed_bbox
-from .plume_base import PlumeBackend
+from .plume_base import (
+    PlumeBackend,
+    emission_matrix_to_schedule,
+    parse_emission_matrix_file,
+)
 
 
 
@@ -45,11 +49,30 @@ def _diag(msg: str) -> None:
     print(f"[diag] {msg}")
 
 
-def _ensure_parent_dir(path: str | None) -> None:
+def _ensure_parent_dir(path) -> None:
     """Create parent directory for an output path when needed."""
     if not path:
         return
     Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _build_emission_release_vectors(schedule):
+    """Expand [height,time] count matrix into flat release vectors."""
+    release_times = []
+    release_heights = []
+    counts = np.asarray(schedule["counts"], dtype=int)
+    heights_m = np.asarray(schedule["heights_m"], dtype=float)
+    times_utc = np.asarray(schedule["release_times_utc"]).astype("datetime64[s]")
+    for t_idx in range(times_utc.size):
+        for h_idx in range(heights_m.size):
+            n = int(counts[h_idx, t_idx])
+            if n <= 0:
+                continue
+            release_times.extend([times_utc[t_idx]] * n)
+            release_heights.extend([heights_m[h_idx]] * n)
+    if not release_times:
+        return np.asarray([], dtype="datetime64[s]"), np.asarray([], dtype=float)
+    return np.asarray(release_times, dtype="datetime64[s]"), np.asarray(release_heights, dtype=float)
 
 
 def _expand_wrfout_paths(input_args):
@@ -3522,6 +3545,7 @@ def advect_parcels_forward_wrf(
     integration_dt,
     settling_profile=None,
     settling_recalc_interval=300.0,
+    release_time_sec=None,
 ):
     u = np.asarray(u)
     v = np.asarray(v)
@@ -3550,12 +3574,35 @@ def advect_parcels_forward_wrf(
     if it_end <= it_start:
         raise ValueError("end_time must be later than start_time.")
 
-    j_p = parcels["j"].copy()
-    i_p = parcels["i"].copy()
-    k_p = parcels["k"].copy()
+    j_seed = parcels["j"].copy()
+    i_seed = parcels["i"].copy()
+    k_seed = parcels["k"].copy()
+    j_p = j_seed.copy()
+    i_p = i_seed.copy()
+    k_p = k_seed.copy()
     n_parcels = j_p.size
 
-    active = np.ones(n_parcels, dtype=bool)
+    if release_time_sec is None:
+        release_sec = np.full(n_parcels, t_sec[it_start], dtype=float)
+    else:
+        release_sec = np.asarray(release_time_sec, dtype=float)
+        if release_sec.shape[0] != n_parcels:
+            raise ValueError("release_time_sec must match number of parcels.")
+
+    released = np.zeros(n_parcels, dtype=bool)
+    active = np.zeros(n_parcels, dtype=bool)
+    j_p[:] = np.nan
+    i_p[:] = np.nan
+    k_p[:] = np.nan
+
+    def _activate_new_parcels(current_time):
+        new = (~released) & np.isfinite(release_sec) & (release_sec <= current_time + 1e-9)
+        if np.any(new):
+            j_p[new] = j_seed[new]
+            i_p[new] = i_seed[new]
+            k_p[new] = k_seed[new]
+            active[new] = True
+            released[new] = True
     trajectory_times = []
     trajectory_time_indices = []
     trajectory_i = []
@@ -3571,6 +3618,7 @@ def advect_parcels_forward_wrf(
         trajectory_k.append(k_p.copy())
         trajectory_active.append(active.copy())
 
+    _activate_new_parcels(t_sec[it_start])
     record_trajectory(t_sec[it_start], it_start)
 
     settling_enabled = settling_profile is not None
@@ -3605,7 +3653,7 @@ def advect_parcels_forward_wrf(
     current_time_sec = t_sec[it_start]
 
     for it in range(it_start, it_end):
-        if not active.any():
+        if (not active.any()) and np.all(released):
             break
 
         dt_total = t_sec[it + 1] - t_sec[it]
@@ -3822,10 +3870,14 @@ def advect_parcels_forward_wrf(
             dt_remaining -= dt_step
             sub_time += dt_step
             current_time_sec = sub_time
+            _activate_new_parcels(current_time_sec)
+
+        # Advance to the next model time and release any parcels that start exactly on this boundary.
+        current_time_sec = t_sec[it + 1]
+        _activate_new_parcels(current_time_sec)
 
         it_finish = it + 1
-        time_idx = int(np.argmin(np.abs(t_sec - current_time_sec)))
-        record_trajectory(current_time_sec, time_idx)
+        record_trajectory(current_time_sec, it + 1)
 
     result = dict(parcels)
     result["trajectory_times"] = np.array(trajectory_times, dtype=float)
@@ -4011,6 +4063,7 @@ def plot_trajectories_by_height(
     trajectory_k,
     height_hist_m,
     out_path,
+    initial_heights_m=None,
     height_min=None,
     height_max=None,
     figure_dpi=200,
@@ -4024,7 +4077,18 @@ def plot_trajectories_by_height(
     if not np.isfinite(heights_m).any():
         print("[diag] No height history available; skipping height figure.")
         return False
-    init_heights_m = np.asarray(heights_m[0, :], dtype=float)
+
+    if initial_heights_m is not None:
+        init_heights_m = np.asarray(initial_heights_m, dtype=float)
+        if init_heights_m.ndim != 1 or init_heights_m.size != heights_m.shape[1]:
+            print(
+                "[diag] Initial-height vector has unexpected shape; "
+                "falling back to first snapshot heights."
+            )
+            init_heights_m = np.asarray(heights_m[0, :], dtype=float)
+    else:
+        init_heights_m = np.asarray(heights_m[0, :], dtype=float)
+
     if not np.isfinite(init_heights_m).any():
         print("[diag] No initial heights available; skipping height figure.")
         return False
@@ -4038,8 +4102,9 @@ def plot_trajectories_by_height(
     fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
 
     n_bins = 10
-    data_min_m = float(np.nanmin(init_heights_m))
-    data_max_m = float(np.nanmax(init_heights_m))
+    finite_init = np.isfinite(init_heights_m)
+    data_min_m = float(np.nanmin(init_heights_m[finite_init]))
+    data_max_m = float(np.nanmax(init_heights_m[finite_init]))
     if np.isclose(data_min_m, data_max_m):
         data_max_m = data_min_m + 50.0
     if (
@@ -4070,9 +4135,9 @@ def plot_trajectories_by_height(
 
     # Draw segments while parcels are active at the segment start; this keeps
     # the final segment visible even when a parcel deactivates at the end point.
-    active_mask = active_hist[:-1, :].T
+    active_mask = active_hist[:-1, :].T & finite_init[:, None]
     if active_mask.any():
-        color_idx = np.digitize(init_heights_m, h_bins_m) - 1
+        color_idx = np.digitize(np.where(finite_init, init_heights_m, range_min_m), h_bins_m) - 1
         color_idx = np.clip(color_idx, 0, n_bins - 1)
         colors_per_parcel = palette[color_idx]
         colors_to_plot = np.repeat(colors_per_parcel, active_mask.sum(axis=1), axis=0)
@@ -4122,8 +4187,8 @@ def plot_trajectories_by_height(
 
     ax.set_xlabel("")
     ax.set_ylabel("")
-    min_km = float(np.nanmin(init_heights_m)) / 1000.0
-    max_km = float(np.nanmax(init_heights_m)) / 1000.0
+    min_km = float(np.nanmin(init_heights_m[finite_init])) / 1000.0
+    max_km = float(np.nanmax(init_heights_m[finite_init])) / 1000.0
     ax.set_title(
         "Parcel trajectories coloured by initial height "
         f"(min={min_km:.2f} km, max={max_km:.2f} km)"
@@ -4735,20 +4800,29 @@ def parse_forwtraj_args():
     parser.add_argument(
         "--n-vert",
         type=int,
-        default=30,
-        help="Number of parcels along the vertical release column.",
+        default=None,
+        help="Number of parcels along the vertical release column (default: 30).",
     )
     parser.add_argument(
         "--z-min",
         type=float,
-        default=2000.0,
-        help="Minimum release height [m].",
+        default=None,
+        help="Minimum release height [m] (default: 2000).",
     )
     parser.add_argument(
         "--z-max",
         type=float,
-        default=25000.0,
-        help="Maximum release height [m].",
+        default=None,
+        help="Maximum release height [m] (default: 25000).",
+    )
+    parser.add_argument(
+        "--emission-matrix",
+        default=None,
+        help=(
+            "Optional time-height emission matrix TXT. Recommended time header is "
+            "'time_offset_h' or 'time_offset_s' (offsets from --start-time). "
+            "Legacy 'time' header is also accepted."
+        ),
     )
     parser.add_argument(
         "--integration-dt",
@@ -4882,27 +4956,128 @@ def run_forwtraj(args):
         raise ValueError("End time index is not later than start time index.")
 
     model_max_height = float(np.nanmax(z_center))
-    if args.z_max is not None and np.isfinite(args.z_max) and args.z_max > model_max_height:
+    z_min_cfg = 2000.0 if args.z_min is None else float(args.z_min)
+    z_max_cfg = 25000.0 if args.z_max is None else float(args.z_max)
+    n_vert_cfg = 30 if args.n_vert is None else int(args.n_vert)
+
+    if np.isfinite(z_max_cfg) and z_max_cfg > model_max_height and args.emission_matrix is None:
         raise ValueError(
-            f"Requested z_max={args.z_max:.1f} m exceeds model top {model_max_height:.1f} m."
+            f"Requested z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
         )
 
-    rng = np.random.default_rng()
-    seed_cells = _select_seed_columns(xlat, xlon, args.seed_bbox, args.n_columns, rng)
-    if seed_cells is None:
+    parcels_init_for_seed_plot = None
+    release_time_sec = None
+    if args.emission_matrix:
         if args.source_lat is None or args.source_lon is None:
-            raise ValueError("Provide --source-lat/--source-lon or --seed-bbox.")
-        j0, i0 = _select_source_cell(xlat, xlon, args.source_lat, args.source_lon)
-        seed_cells = np.array([[j0, i0]], dtype=int)
+            raise ValueError("Emission-matrix mode requires --source-lat and --source-lon.")
 
-    parcels_init = generate_parcels_from_source(
-        z_center=z_center,
-        time_index=it_start,
-        seed_cells=seed_cells,
-        n_vert=args.n_vert,
-        z_min=args.z_min,
-        z_max=args.z_max,
-    )
+        matrix = parse_emission_matrix_file(args.emission_matrix)
+        _diag(f"Loaded emission matrix file: {args.emission_matrix}")
+        _diag(
+            f"Emission matrix time header '{matrix['time_key']}' interpreted as "
+            f"'{matrix['time_kind']}'."
+        )
+        _diag("Emission matrix file content:")
+        for ln in matrix["raw_text"].splitlines():
+            _diag(f"  {ln}")
+
+        use_override = (
+            args.z_min is not None
+            and args.z_max is not None
+            and args.n_vert is not None
+        )
+        if use_override and z_max_cfg > model_max_height:
+            raise ValueError(
+                f"Requested override z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
+            )
+        schedule = emission_matrix_to_schedule(
+            matrix,
+            start_time_dt.astype("datetime64[s]"),
+            z_override=(
+                dict(z_min=z_min_cfg, z_max=z_max_cfg, n_vert=n_vert_cfg)
+                if use_override
+                else None
+            ),
+        )
+        if use_override:
+            _diag(
+                "Emission matrix override mode: using matrix times only with heights from "
+                f"--z-min/--z-max/--n-vert = {z_min_cfg:.1f}/{z_max_cfg:.1f}/{n_vert_cfg}, "
+                "and 1 particle per (time,height) cell."
+            )
+        else:
+            _diag(
+                "Emission matrix native mode: using matrix times, heights, and counts "
+                f"(height units interpreted as {schedule['height_unit_hint']})."
+            )
+
+        release_times_utc_all, release_heights_m_all = _build_emission_release_vectors(schedule)
+        if release_times_utc_all.size == 0:
+            raise ValueError("Emission matrix produced zero release parcels.")
+
+        in_window = (
+            release_times_utc_all >= times_arr[it_start].astype("datetime64[s]")
+        ) & (
+            release_times_utc_all <= times_arr[it_end].astype("datetime64[s]")
+        )
+        if not np.any(in_window):
+            raise ValueError("No emission-matrix releases fall inside the requested advection window.")
+
+        release_times_utc = release_times_utc_all[in_window].astype("datetime64[s]")
+        release_heights_m = release_heights_m_all[in_window]
+        release_time_sec = (
+            (release_times_utc - times_arr[0].astype("datetime64[s]")) / np.timedelta64(1, "s")
+        ).astype(float)
+
+        j0, i0 = _select_source_cell(xlat, xlon, args.source_lat, args.source_lon)
+        k_levels = np.arange(z_center.shape[1], dtype=float)
+        k_vals = np.empty(release_heights_m.size, dtype=float)
+        t_sec = ((times_arr - times_arr[0]) / np.timedelta64(1, "s")).astype(float)
+        for p in range(release_heights_m.size):
+            t_idx = int(np.argmin(np.abs(t_sec - release_time_sec[p])))
+            z_prof = z_center[t_idx, :, j0, i0]
+            k_vals[p] = np.interp(release_heights_m[p], z_prof, k_levels)
+
+        parcels_init = dict(
+            j=np.full(release_heights_m.size, float(j0), dtype=float),
+            i=np.full(release_heights_m.size, float(i0), dtype=float),
+            k=k_vals,
+            z_init=release_heights_m.astype(float),
+            release_time_utc=release_times_utc,
+            release_time_sec=release_time_sec.astype(float),
+        )
+
+        first_rel = release_times_utc.min()
+        seed_mask = release_times_utc == first_rel
+        parcels_init_for_seed_plot = dict(
+            j=parcels_init["j"][seed_mask],
+            i=parcels_init["i"][seed_mask],
+            k=parcels_init["k"][seed_mask],
+            z_init=parcels_init["z_init"][seed_mask],
+        )
+        _diag(
+            "Emission releases in window: "
+            f"{release_heights_m.size} parcels, "
+            f"{str(release_times_utc.min())} -> {str(release_times_utc.max())}."
+        )
+    else:
+        rng = np.random.default_rng()
+        seed_cells = _select_seed_columns(xlat, xlon, args.seed_bbox, args.n_columns, rng)
+        if seed_cells is None:
+            if args.source_lat is None or args.source_lon is None:
+                raise ValueError("Provide --source-lat/--source-lon or --seed-bbox.")
+            j0, i0 = _select_source_cell(xlat, xlon, args.source_lat, args.source_lon)
+            seed_cells = np.array([[j0, i0]], dtype=int)
+
+        parcels_init = generate_parcels_from_source(
+            z_center=z_center,
+            time_index=it_start,
+            seed_cells=seed_cells,
+            n_vert=n_vert_cfg,
+            z_min=z_min_cfg,
+            z_max=z_max_cfg,
+        )
+        parcels_init_for_seed_plot = parcels_init
 
     for out_path in (
         args.seeds_vertical_figure,
@@ -4914,15 +5089,24 @@ def run_forwtraj(args):
         _ensure_parent_dir(out_path)
 
     if args.seeds_vertical_figure:
-        plot_seed_vertical_distribution(
-            parcels=parcels_init,
-            out_path=args.seeds_vertical_figure,
-            z_min=args.z_min,
-            z_max=args.z_max,
-            figure_dpi=max(50, int(args.figure_dpi)),
-            x_coords=parcels_init["i"],
-        )
-        print(f"[diag] Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
+        if parcels_init_for_seed_plot is None or np.asarray(parcels_init_for_seed_plot.get("z_init", [])).size == 0:
+            _diag("No seed parcels available for vertical-distribution plot.")
+        else:
+            z_plot = np.asarray(parcels_init_for_seed_plot["z_init"], dtype=float)
+            z_plot_min = float(np.nanmin(z_plot))
+            z_plot_max = float(np.nanmax(z_plot))
+            if not np.isfinite(z_plot_min) or not np.isfinite(z_plot_max) or z_plot_max <= z_plot_min:
+                z_plot_min = 0.0
+                z_plot_max = max(1.0, z_plot_min + 1.0)
+            plot_seed_vertical_distribution(
+                parcels=parcels_init_for_seed_plot,
+                out_path=args.seeds_vertical_figure,
+                z_min=z_plot_min,
+                z_max=z_plot_max,
+                figure_dpi=max(50, int(args.figure_dpi)),
+                x_coords=parcels_init_for_seed_plot["i"],
+            )
+            print(f"[diag] Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
 
     settling_profile = None
     if args.aer_type is not None:
@@ -4948,6 +5132,7 @@ def run_forwtraj(args):
         end_time_index=it_end,
         integration_dt=args.integration_dt,
         settling_profile=settling_profile,
+        release_time_sec=release_time_sec,
     )
 
     print(
@@ -5018,6 +5203,7 @@ def run_forwtraj(args):
         trajectory_active=result["trajectory_active"],
         trajectory_k=result["trajectory_k"],
         height_hist_m=height_hist,
+        initial_heights_m=parcels_init.get("z_init"),
         out_path=args.initial_height_figure,
         height_min=None,
         height_max=None,

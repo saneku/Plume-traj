@@ -149,6 +149,7 @@ def main(args=None):
         trajectory_active=trajectories["active"],
         trajectory_k=trajectories.get("k"),
         height_hist_m=height_hist,
+        initial_heights_m=state.get("initial_parcels", {}).get("z_init"),
         out_path=args.initial_height_figure,
         height_min=None,
         height_max=None,
