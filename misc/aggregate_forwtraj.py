@@ -96,22 +96,118 @@ def parse_args():
     return parser.parse_args()
 
 
-def _pad_time(arr, target, fill):
-    if arr.shape[0] >= target:
-        return arr
-    pad_w = [(0, target - arr.shape[0])] + [(0, 0)] * (arr.ndim - 1)
-    return np.pad(arr, pad_w, mode="constant", constant_values=fill)
+def _as_utc_times(state):
+    """Return trajectory timestamps as datetime64[s] for one run-state."""
+    traj_times = np.asarray(state["trajectories"]["times"])
+    if traj_times.ndim != 1:
+        raise ValueError("Trajectory times must be a 1-D array.")
+
+    if traj_times.dtype.kind == "M":
+        return traj_times.astype("datetime64[s]")
+
+    meta = state.get("metadata", {})
+    ref_time = meta.get("start_time", meta.get("advection_start_time"))
+    if ref_time is None:
+        raise ValueError("Cannot recover UTC timestamps: metadata.start_time is missing.")
+    ref_time = np.datetime64(ref_time).astype("datetime64[s]")
+
+    traj_sec = np.asarray(traj_times, dtype=float)
+    if traj_sec.size == 0:
+        return np.asarray([], dtype="datetime64[s]")
+    rel_sec = np.rint(traj_sec - traj_sec[0]).astype(np.int64)
+    return ref_time + rel_sec.astype("timedelta64[s]")
 
 
-def _pad_time_with_last(arr, target):
-    """
-    Pad time axis by repeating the final available snapshot.
-    """
-    if arr.shape[0] >= target:
-        return arr
-    n_add = target - arr.shape[0]
-    tail = np.repeat(arr[-1:, ...], n_add, axis=0)
-    return np.concatenate([arr, tail], axis=0)
+def _align_2d_to_master(arr, run_idx_for_master, as_bool=False):
+    """Reindex a [time, parcel] array onto master timeline."""
+    arr = np.asarray(arr)
+    if arr.ndim != 2:
+        raise ValueError("Expected a 2-D [time, parcel] array.")
+
+    t_master = run_idx_for_master.size
+    n_parcels = arr.shape[1]
+    if as_bool:
+        out = np.zeros((t_master, n_parcels), dtype=bool)
+    else:
+        if np.issubdtype(arr.dtype, np.floating):
+            out = np.full((t_master, n_parcels), np.nan, dtype=arr.dtype)
+        else:
+            arr = arr.astype(float)
+            out = np.full((t_master, n_parcels), np.nan, dtype=float)
+
+    valid = run_idx_for_master >= 0
+    if np.any(valid):
+        out[valid] = arr[run_idx_for_master[valid]]
+    return out
+
+
+def _align_state_to_master_times(state, target, master_times):
+    """Align one state's trajectory time axis to master UTC timeline."""
+    traj = state["trajectories"]
+    run_times = _as_utc_times(state)
+    run_sec = run_times.astype("datetime64[s]").astype(np.int64)
+    master_sec = master_times.astype("datetime64[s]").astype(np.int64)
+    time_to_idx = {int(sec): idx for idx, sec in enumerate(run_sec)}
+    run_idx_for_master = np.array([time_to_idx.get(int(sec), -1) for sec in master_sec], dtype=int)
+
+    if target == "wrf":
+        required = ("i", "j", "active")
+        optional = ("k", "height_hist_m")
+    else:
+        required = ("lon", "lat", "z", "active")
+        optional = ("height_hist_m",)
+
+    for key in required:
+        if key not in traj:
+            raise KeyError(f"Trajectory key '{key}' missing in run-state.")
+        traj[key] = _align_2d_to_master(
+            traj[key],
+            run_idx_for_master,
+            as_bool=(key == "active"),
+        )
+
+    for key in optional:
+        if key in traj and traj[key] is not None:
+            traj[key] = _align_2d_to_master(traj[key], run_idx_for_master, as_bool=False)
+
+    traj["times_utc"] = master_times.copy()
+    if target == "wrf":
+        traj["times"] = ((master_times - master_times[0]) / np.timedelta64(1, "s")).astype(float)
+    else:
+        traj["times"] = master_times.copy()
+    traj["time_indices"] = np.arange(master_times.size, dtype=int)
+
+    meta = state.setdefault("metadata", {})
+    meta["start_time"] = master_times[0]
+    meta["end_time"] = master_times[-1]
+
+
+def _concat_optional_time_parcel(agg_traj, new_traj, key):
+    """Concatenate optional [time, parcel] arrays, padding missing side with NaN."""
+    t_master = agg_traj["active"].shape[0]
+    n_agg = agg_traj["active"].shape[1]
+    n_new = new_traj["active"].shape[1]
+    agg_arr = agg_traj.get(key)
+    new_arr = new_traj.get(key)
+    if agg_arr is None and new_arr is None:
+        return
+    if agg_arr is None:
+        agg_arr = np.full((t_master, n_agg), np.nan, dtype=float)
+    if new_arr is None:
+        new_arr = np.full((t_master, n_new), np.nan, dtype=float)
+    agg_traj[key] = np.concatenate([np.asarray(agg_arr), np.asarray(new_arr)], axis=1)
+
+
+def _concat_initial_parcels(aggregated_state, state, keys):
+    if "initial_parcels" not in aggregated_state or not aggregated_state["initial_parcels"]:
+        return
+    new_ip = state.get("initial_parcels")
+    if not new_ip:
+        return
+    agg_ip = aggregated_state["initial_parcels"]
+    for key in keys:
+        if key in agg_ip and key in new_ip and agg_ip[key] is not None and new_ip[key] is not None:
+            agg_ip[key] = np.concatenate([np.asarray(agg_ip[key]), np.asarray(new_ip[key])])
 
 
 def _non_deposited_parcel_mask(trajectory_k, trajectory_active, tol=1e-6):
@@ -142,163 +238,58 @@ def _non_deposited_parcel_mask(trajectory_k, trajectory_active, tol=1e-6):
     return keep
 
 
-def load_and_aggregate(pickle_paths):
-    aggregated_state = None
-
+def _load_and_aggregate_common(pickle_paths, target):
+    states = []
+    run_times_list = []
     for pkl_path in pickle_paths:
         print(f"[diag] Loading {pkl_path}...")
         with open(pkl_path, "rb") as fh:
             state = pickle.load(fh)
+        states.append(state)
+        run_times_list.append(_as_utc_times(state))
 
-        if aggregated_state is None:
-            aggregated_state = state
-            return_state = aggregated_state
-            traj = return_state["trajectories"]
-            traj["i"] = np.asarray(traj["i"])
-            traj["j"] = np.asarray(traj["j"])
-            traj["active"] = np.asarray(traj["active"])
-            if "k" in traj:
-                traj["k"] = np.asarray(traj["k"])
-            if "height_hist_m" in traj:
-                traj["height_hist_m"] = np.asarray(traj["height_hist_m"])
-            if "times" in traj:
-                traj["times"] = np.asarray(traj["times"])
-            if "initial_parcels" in return_state and return_state["initial_parcels"]:
-                ip = return_state["initial_parcels"]
-                ip["i"] = np.asarray(ip["i"])
-                ip["j"] = np.asarray(ip["j"])
-                if "z_init" in ip:
-                    ip["z_init"] = np.asarray(ip["z_init"])
-            continue
+    if not states:
+        return None
 
-        agg_traj = aggregated_state["trajectories"]
+    master_times = np.unique(np.concatenate(run_times_list)).astype("datetime64[s]")
+    print(
+        "[diag] UTC alignment: "
+        f"{len(states)} run(s), master timeline has {master_times.size} snapshot(s) "
+        f"from {master_times[0]} to {master_times[-1]}."
+    )
+
+    for state in states:
+        _align_state_to_master_times(state, target, master_times)
+
+    aggregated_state = states[0]
+    agg_traj = aggregated_state["trajectories"]
+    for state in states[1:]:
         new_traj = state["trajectories"]
-        new_traj["i"] = np.asarray(new_traj["i"])
-        new_traj["j"] = np.asarray(new_traj["j"])
-        new_traj["active"] = np.asarray(new_traj["active"])
-        if "k" in new_traj:
-            new_traj["k"] = np.asarray(new_traj["k"])
-        if "height_hist_m" in new_traj:
-            new_traj["height_hist_m"] = np.asarray(new_traj["height_hist_m"])
 
-        t_agg = agg_traj["i"].shape[0]
-        t_new = new_traj["i"].shape[0]
-        if t_agg != t_new:
-            t_max = max(t_agg, t_new)
-            print(f"[diag] Time dimension mismatch: {t_agg} vs {t_new}. Padding to {t_max}.")
-            # Keep final parcel position/state visible after a shorter run ends.
-            agg_traj["i"] = _pad_time_with_last(agg_traj["i"], t_max)
-            agg_traj["j"] = _pad_time_with_last(agg_traj["j"], t_max)
-            agg_traj["active"] = _pad_time(agg_traj["active"], t_max, False)
-            if "k" in agg_traj:
-                agg_traj["k"] = _pad_time_with_last(agg_traj["k"], t_max)
-            if "height_hist_m" in agg_traj:
-                agg_traj["height_hist_m"] = _pad_time_with_last(
-                    agg_traj["height_hist_m"], t_max
-                )
+        if target == "wrf":
+            for key in ("i", "j", "active"):
+                agg_traj[key] = np.concatenate([np.asarray(agg_traj[key]), np.asarray(new_traj[key])], axis=1)
+            _concat_optional_time_parcel(agg_traj, new_traj, "k")
+            _concat_optional_time_parcel(agg_traj, new_traj, "height_hist_m")
+            _concat_initial_parcels(aggregated_state, state, ("i", "j", "z_init"))
+        else:
+            for key in ("lon", "lat", "z", "active"):
+                agg_traj[key] = np.concatenate([np.asarray(agg_traj[key]), np.asarray(new_traj[key])], axis=1)
+            _concat_optional_time_parcel(agg_traj, new_traj, "height_hist_m")
+            _concat_initial_parcels(aggregated_state, state, ("lon", "lat", "z_init", "cell"))
 
-            new_traj["i"] = _pad_time_with_last(new_traj["i"], t_max)
-            new_traj["j"] = _pad_time_with_last(new_traj["j"], t_max)
-            new_traj["active"] = _pad_time(new_traj["active"], t_max, False)
-            if "k" in new_traj:
-                new_traj["k"] = _pad_time_with_last(new_traj["k"], t_max)
-            if "height_hist_m" in new_traj:
-                new_traj["height_hist_m"] = _pad_time_with_last(
-                    new_traj["height_hist_m"], t_max
-                )
-
-        agg_traj["i"] = np.concatenate([agg_traj["i"], new_traj["i"]], axis=1)
-        agg_traj["j"] = np.concatenate([agg_traj["j"], new_traj["j"]], axis=1)
-        agg_traj["active"] = np.concatenate([agg_traj["active"], new_traj["active"]], axis=1)
-        if "k" in agg_traj and "k" in new_traj:
-            agg_traj["k"] = np.concatenate([agg_traj["k"], new_traj["k"]], axis=1)
-        elif "k" in agg_traj and "k" not in new_traj:
-            # Keep shape consistent when mixing old/new pickles by padding missing k.
-            missing_k = np.full(new_traj["i"].shape, np.nan, dtype=float)
-            agg_traj["k"] = np.concatenate([agg_traj["k"], missing_k], axis=1)
-        elif "k" not in agg_traj and "k" in new_traj:
-            # Backfill previous parcels with NaN k if earlier pickles had no k.
-            old_cols = agg_traj["i"].shape[1] - new_traj["i"].shape[1]
-            backfill_k = np.full((agg_traj["i"].shape[0], old_cols), np.nan, dtype=float)
-            agg_traj["k"] = np.concatenate([backfill_k, new_traj["k"]], axis=1)
-
-        if "height_hist_m" in agg_traj and "height_hist_m" in new_traj:
-            agg_traj["height_hist_m"] = np.concatenate(
-                [agg_traj["height_hist_m"], new_traj["height_hist_m"]], axis=1
-            )
-
-        if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
-            ip = aggregated_state["initial_parcels"]
-            nip = state.get("initial_parcels")
-            if nip:
-                ip["i"] = np.concatenate([ip["i"], np.asarray(nip["i"])])
-                ip["j"] = np.concatenate([ip["j"], np.asarray(nip["j"])])
-                if "z_init" in ip and "z_init" in nip:
-                    ip["z_init"] = np.concatenate([ip["z_init"], np.asarray(nip["z_init"])])
-
+    aggregated_state.setdefault("metadata", {})
+    aggregated_state["metadata"]["start_time"] = master_times[0]
+    aggregated_state["metadata"]["end_time"] = master_times[-1]
     return aggregated_state
+
+
+def load_and_aggregate(pickle_paths):
+    return _load_and_aggregate_common(pickle_paths, target="wrf")
 
 
 def load_and_aggregate_mpas(pickle_paths):
-    aggregated_state = None
-
-    for pkl_path in pickle_paths:
-        print(f"[diag] Loading {pkl_path}...")
-        with open(pkl_path, "rb") as fh:
-            state = pickle.load(fh)
-
-        if aggregated_state is None:
-            aggregated_state = state
-            traj = aggregated_state["trajectories"]
-            for key in ("lon", "lat", "z", "active", "times", "time_indices", "height_hist_m"):
-                if key in traj and traj[key] is not None:
-                    traj[key] = np.asarray(traj[key])
-            if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
-                ip = aggregated_state["initial_parcels"]
-                for key in ("lon", "lat", "z_init", "cell"):
-                    if key in ip and ip[key] is not None:
-                        ip[key] = np.asarray(ip[key])
-            continue
-
-        agg_traj = aggregated_state["trajectories"]
-        new_traj = state["trajectories"]
-        for key in ("lon", "lat", "z", "active", "times", "time_indices", "height_hist_m"):
-            if key in new_traj and new_traj[key] is not None:
-                new_traj[key] = np.asarray(new_traj[key])
-
-        t_agg = agg_traj["lon"].shape[0]
-        t_new = new_traj["lon"].shape[0]
-        if t_agg != t_new:
-            t_max = max(t_agg, t_new)
-            print(f"[diag] Time dimension mismatch: {t_agg} vs {t_new}. Padding to {t_max}.")
-            agg_traj["lon"] = _pad_time_with_last(agg_traj["lon"], t_max)
-            agg_traj["lat"] = _pad_time_with_last(agg_traj["lat"], t_max)
-            agg_traj["z"] = _pad_time_with_last(agg_traj["z"], t_max)
-            agg_traj["active"] = _pad_time(agg_traj["active"], t_max, False)
-
-            new_traj["lon"] = _pad_time_with_last(new_traj["lon"], t_max)
-            new_traj["lat"] = _pad_time_with_last(new_traj["lat"], t_max)
-            new_traj["z"] = _pad_time_with_last(new_traj["z"], t_max)
-            new_traj["active"] = _pad_time(new_traj["active"], t_max, False)
-
-        agg_traj["lon"] = np.concatenate([agg_traj["lon"], new_traj["lon"]], axis=1)
-        agg_traj["lat"] = np.concatenate([agg_traj["lat"], new_traj["lat"]], axis=1)
-        agg_traj["z"] = np.concatenate([agg_traj["z"], new_traj["z"]], axis=1)
-        agg_traj["active"] = np.concatenate([agg_traj["active"], new_traj["active"]], axis=1)
-
-        for key in ("final_heights_m", "height_hist_m"):
-            if key in agg_traj and key in new_traj and agg_traj[key] is not None and new_traj[key] is not None:
-                agg_traj[key] = np.concatenate([np.asarray(agg_traj[key]), np.asarray(new_traj[key])], axis=0 if np.asarray(agg_traj[key]).ndim == 1 else 1)
-
-        if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
-            ip = aggregated_state["initial_parcels"]
-            nip = state.get("initial_parcels")
-            if nip:
-                for key in ("lon", "lat", "z_init"):
-                    if key in ip and key in nip:
-                        ip[key] = np.concatenate([np.asarray(ip[key]), np.asarray(nip[key])])
-
-    return aggregated_state
+    return _load_and_aggregate_common(pickle_paths, target="mpas")
 
 
 def main():
@@ -318,19 +309,6 @@ def main():
     grid = state["grid"]
     trajectories = state["trajectories"]
     script_args = state.get("args", {})
-
-    xlat = np.asarray(grid["xlat"])
-    xlon = np.asarray(grid["xlon"])
-    height_hist = trajectories.get("height_hist_m")
-    if height_hist is None:
-        raise ValueError("Aggregated trajectories do not contain height history.")
-    traj_i_all = np.asarray(trajectories["i"])
-    traj_j_all = np.asarray(trajectories["j"])
-    traj_active_all = np.asarray(trajectories["active"])
-    traj_k_all = trajectories.get("k")
-    if traj_k_all is not None:
-        traj_k_all = np.asarray(traj_k_all)
-    height_hist_all = np.asarray(height_hist)
     seed_bbox = script_args.get("seed_bbox")
     if seed_bbox is not None:
         seed_bbox = tuple(seed_bbox)
@@ -451,6 +429,19 @@ def main():
                 figure_dpi=fig_dpi,
             )
         return
+
+    xlat = np.asarray(grid["xlat"])
+    xlon = np.asarray(grid["xlon"])
+    height_hist = trajectories.get("height_hist_m")
+    if height_hist is None:
+        raise ValueError("Aggregated trajectories do not contain height history.")
+    traj_i_all = np.asarray(trajectories["i"])
+    traj_j_all = np.asarray(trajectories["j"])
+    traj_active_all = np.asarray(trajectories["active"])
+    traj_k_all = trajectories.get("k")
+    if traj_k_all is not None:
+        traj_k_all = np.asarray(traj_k_all)
+    height_hist_all = np.asarray(height_hist)
 
     if args.hourly_output_dir:
         traj_times_utc = None

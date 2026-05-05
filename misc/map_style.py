@@ -67,6 +67,11 @@ def _extent_from_ax(ax):
     return [west, south, east, north]
 
 
+def _point_in_extent(x, y, extent):
+    lon_min, lat_min, lon_max, lat_max = extent
+    return (lon_min <= x <= lon_max) and (lat_min <= y <= lat_max)
+
+
 def _add_label(
     ax,
     text,
@@ -406,19 +411,21 @@ def apply_map_style(ax, draw_labels=False, label_size=10):
 
     if lon_min <= 66 and lon_max >= 30 and lat_min <= 31 and lat_max >= 5:
         for name, x, y, size in COUNTRY_LABELS:
-            _add_label(ax, name, x, y, size=size)
+            if _point_in_extent(x, y, extent):
+                _add_label(ax, name, x, y, size=size)
         for text, x, y, size, weight, color, rotation, style in WATER_LABELS:
-            _add_label(
-                ax,
-                text,
-                x,
-                y,
-                size=size,
-                weight=weight,
-                color=color,
-                rotation=rotation,
-                style=style,
-            )
+            if _point_in_extent(x, y, extent):
+                _add_label(
+                    ax,
+                    text,
+                    x,
+                    y,
+                    size=size,
+                    weight=weight,
+                    color=color,
+                    rotation=rotation,
+                    style=style,
+                )
         _add_scale_bar(ax, lon0=32.5, lat0=6.2, length_km=750)
         _add_inset(ax, extent)
 
