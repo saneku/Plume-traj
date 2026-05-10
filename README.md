@@ -47,6 +47,8 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Optional hourly snapshots by setting `--hourly-output-dir <dir>`
 - Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
 - Select the meteorology backend with `--target wrf` or `--target mpas`
+- Forward mode supports `--emission-matrix <txt>` for time-height release schedules
+- Recommended matrix time headers are `time_offset_h` (hours from `--start-time`) or `time_offset_s` (seconds from `--start-time`); legacy `time` is still accepted
 - MPAS mode reads `history*.nc` files with `latCell`, `lonCell`, `zgrid`, `uReconstructZonal`, `uReconstructMeridional`, and `w`
 - In WRF mode, `--column` is the gridded source field on the WRF mesh; in MPAS mode, it is the source field on the MPAS cell mesh
 - If you point MPAS mode at a history file for `--column`, the current backend uses the requested variable as a cell field and collapses any vertical dimension to a 2-D source map by summing over levels
@@ -103,7 +105,30 @@ python plume_forwtraj.py \
   --source-lat 13.51 \
   --source-lon 40.71 \
   --state-pickle forward_run.pkl
+
+# Forward mode with time-height emission matrix
+python plume_forwtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --emission-matrix emission_matrix.txt \
+  --state-pickle forward_run.pkl
 ```
+
+Emission-matrix notes:
+- File format:
+  - first non-empty line: `time_offset_h ...` or `time_offset_s ...` (recommended), or legacy `time ...`
+  - second non-empty line: `height ...`
+  - remaining rows: matrix values (one row per height, from highest height to lowest height)
+- In matrix native mode, times/heights/counts come from the file.
+- If all three are provided together with `--emission-matrix`: `--z-min --z-max --n-vert`
+  - matrix times are still used
+  - matrix heights and counts are ignored
+  - heights are rebuilt from `z-min..z-max` with `n-vert` levels
+  - each (time,height) cell uses one parcel
 
 ## Misc Utilities
 

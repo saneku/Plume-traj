@@ -113,6 +113,9 @@ Full argument list:
 - `--z-min`, `--z-max` (default: `2000`, `25000`)  
   Vertical range (m) of release heights.
 
+- `--emission-matrix` (optional)  
+  Path to a time-height release matrix file. Recommended first line is `time_offset_h ...` (hours from `--start-time`) or `time_offset_s ...` (seconds from `--start-time`). Legacy `time ...` is also accepted.
+
 - `--integration-dt` (default: `15`)  
   Forward advection sub-step in seconds.
 
@@ -143,6 +146,28 @@ Full argument list:
 
 - `--state-pickle` (optional)  
   Path for a pickle file storing inputs and trajectories for re-plotting.
+
+---
+
+### 3.1 Emission-Matrix Format and Override Rules
+
+Expected matrix text layout:
+
+1. First non-empty line: time header  
+   - recommended: `time_offset_h t1 t2 ...` or `time_offset_s t1 t2 ...`
+   - legacy accepted: `time t1 t2 ...`
+2. Second non-empty line: `height h1 h2 ...`
+3. Remaining lines: matrix values, one row per height, ordered from highest height row to lowest height row.
+
+Matrix behavior:
+
+- Native matrix mode (`--emission-matrix` only):
+  - times, heights, and counts are taken from the matrix file.
+- Override mode (`--emission-matrix` plus all of `--z-min --z-max --n-vert`):
+  - matrix times are used
+  - matrix heights and counts are ignored
+  - heights are rebuilt from `z-min..z-max` with `n-vert` levels
+  - one parcel is released per `(time, height)` cell.
 
 ---
 
