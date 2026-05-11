@@ -68,7 +68,7 @@ The backward-in-time simulation begins at a specified time (parameter \path{--st
 \subsection{Parcel Initialization for forward-in-time run}
 Forward runs require a source location or a seed box:
 \begin{itemize}
-  \item \path{--source-lat}, \path{--source-lon} for a single column, or \path{--seed-bbox} with \path{--n-columns} for random source columns.
+  \item \path{--source-lat}, \path{--source-lon} for a single column, or \path{--seed-bbox} with \path{--n-columns} for random source columns (available in both WRF and MPAS modes when \path{--emission-matrix} is not used).
   \item Parcels are initialized between \path{--z-min} and \path{--z-max} with \path{--n-vert} samples. The run spans \path{--start-time} to \path{--end-time}.  
 \end{itemize}
 
@@ -173,6 +173,8 @@ The script \texttt{plume\_backtraj.py} generates a series of quantitative and vi
 
 \subsection{Output from the forward in time run}
 The script \texttt{plume\_forwtraj.py} is for forward runs and produces height- and age-colored trajectory maps (\path{--height-figure}, \path{--age-figure}), as shown in Fig. \ref{fig:fig3}.
+It can also save hourly parcel-location snapshots (\path{--hourly-output-dir}) and a deposited-parcel map colored by deposition hour (\path{--deposition-figure}).
+For both WRF and MPAS forward runs, map diagnostics use consistent overlays: the source marker (red triangle, from \path{--source-lat}/\path{--source-lon}) and the seed area box (\path{--seed-bbox}, when provided). The same overlay behavior is preserved when re-plotting from \path{--state-pickle} with \texttt{plot\_forwtraj.py}.
 
 \begin{figure}[h!]
     \centering

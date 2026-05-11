@@ -30,6 +30,11 @@ def main(args):
     if map_extent is not None:
         map_extent = tuple(map_extent)
     dpi = max(50, int(args.figure_dpi if args.figure_dpi is not None else script_args.get("figure_dpi", 200)))
+    seed_bbox = script_args.get("seed_bbox")
+    if seed_bbox is not None:
+        seed_bbox = tuple(seed_bbox)
+    source_lat = script_args.get("source_lat")
+    source_lon = script_args.get("source_lon")
 
     if args.hourly_output_dir:
         plot_mpas_hourly_snapshots(
@@ -44,8 +49,9 @@ def main(args):
             args.hourly_output_dir,
             figure_dpi=dpi,
             map_extent=map_extent,
-            source_lat=script_args.get("source_lat"),
-            source_lon=script_args.get("source_lon"),
+            source_lat=source_lat,
+            source_lon=source_lon,
+            seed_bbox=seed_bbox,
             tail_enabled=True,
             tail_steps=6,
         )
@@ -62,6 +68,9 @@ def main(args):
             args.deposition_figure,
             figure_dpi=dpi,
             map_extent=map_extent,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            seed_bbox=seed_bbox,
         )
 
     init_heights = trajectories.get("initial_height_m")
@@ -84,6 +93,9 @@ def main(args):
         figure_dpi=dpi,
         map_extent=map_extent,
         cmap_name="rainbow",
+        source_lat=source_lat,
+        source_lon=source_lon,
+        seed_bbox=seed_bbox,
     )
 
     age_hours = np.maximum((traj_times[-1] - traj_times[0]) / np.timedelta64(1, "h"), 0.0)
@@ -101,6 +113,9 @@ def main(args):
         figure_dpi=dpi,
         map_extent=map_extent,
         cmap_name="gist_ncar",
+        source_lat=source_lat,
+        source_lon=source_lon,
+        seed_bbox=seed_bbox,
     )
 
     if args.seeds_vertical_figure is not None:

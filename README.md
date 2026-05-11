@@ -48,6 +48,8 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
 - Select the meteorology backend with `--target wrf` or `--target mpas`
 - Forward mode supports `--emission-matrix <txt>` for time-height release schedules
+- In forward mode without `--emission-matrix`, release can use `--source-lat/--source-lon` or random source columns from `--seed-bbox` with `--n-columns` (WRF and MPAS)
+- Forward `--aer-type` applies aerosol gravitational settling for both WRF and MPAS
 - Recommended matrix time headers are `time_offset_h` (hours from `--start-time`) or `time_offset_s` (seconds from `--start-time`); legacy `time` is still accepted
 - MPAS mode reads `history*.nc` files with `latCell`, `lonCell`, `zgrid`, `uReconstructZonal`, `uReconstructMeridional`, and `w`
 - In WRF mode, `--column` is the gridded source field on the WRF mesh; in MPAS mode, it is the source field on the MPAS cell mesh
@@ -104,6 +106,19 @@ python plume_forwtraj.py \
   --end-time 2025-11-24T12:00:00 \
   --source-lat 13.51 \
   --source-lon 40.71 \
+  --state-pickle forward_run.pkl
+
+# MPAS-Chem random source columns in bbox (non-emission-matrix mode)
+python plume_forwtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --seed-bbox 40.0 10.0 40.1 10.1 \
+  --n-columns 25 \
+  --z-min 1000 \
+  --z-max 23000 \
+  --n-vert 30 \
   --state-pickle forward_run.pkl
 
 # Forward mode with time-height emission matrix

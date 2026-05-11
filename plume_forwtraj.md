@@ -69,7 +69,12 @@ Example:
 --target mpas --input history.2025-11-24_*.nc
 ```
 
-In MPAS mode the release point is specified with `--source-lat` and `--source-lon`, just like WRF mode. The current backend releases one vertical parcel column at the nearest MPAS cell.
+In MPAS mode, forward release supports:
+
+- a single nearest-cell source via `--source-lat` / `--source-lon`, or
+- random source columns inside `--seed-bbox` with `--n-columns` (non-emission-matrix mode).
+
+When `--emission-matrix` is used, MPAS forward still uses `--source-lat` / `--source-lon` as the source location.
 
 ---
 
@@ -102,10 +107,10 @@ Full argument list:
   Release location (column center), in degrees.
 
 - `--seed-bbox LON_MIN LAT_MIN LON_MAX LAT_MAX` (optional)  
-  Restrict the release to random grid cells inside this lon/lat box.
+  Restrict the release to random grid cells inside this lon/lat box (WRF and MPAS, non-emission-matrix mode).
 
 - `--n-columns` (default: `1`)  
-  Number of random grid cells sampled inside `--seed-bbox`.
+  Number of random grid cells sampled inside `--seed-bbox` (WRF and MPAS, non-emission-matrix mode).
 
 - `--n-vert` (default: `30`)  
   Number of parcels along each release column.
@@ -121,7 +126,7 @@ Full argument list:
 
 - `--aer-type` (optional)  
   Aerosol type for gravitational settling (keys in `SETTLING_VEL_MS`).  
-  If omitted, parcels are treated as passive tracers with no gravitational settling.
+  If omitted, parcels are treated as passive tracers with no gravitational settling (WRF and MPAS).
 
 - `--height-figure` (default: `parcel_heights.png`)  
   Output PNG for trajectories coloured by parcel height.
@@ -208,7 +213,7 @@ The script writes:
 - Optional hourly parcel-location maps (`--hourly-output-dir`)
 - Optional pickle file (`--state-pickle`)
 
-If `--seed-bbox` is used, the bbox outline is drawn on the maps.
+In WRF forward plots, `--seed-bbox` is drawn as an outline on maps.
 Hourly maps use the nearest available trajectory snapshot to each whole hour.
 
 ---
@@ -287,6 +292,21 @@ python plume_forwtraj.py \
   --n-vert 30
 ```
 
+### MPAS random columns inside a bbox
+
+```bash
+python plume_forwtraj.py \
+  --target mpas \
+  --input history.2025-11-24_*.nc \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --seed-bbox 40.0 10.0 40.1 10.1 \
+  --n-columns 25 \
+  --z-min 1000 \
+  --z-max 23000 \
+  --n-vert 30
+```
+
 ### Aerosol settling enabled
 
 ```bash
@@ -323,7 +343,7 @@ python plume_forwtraj.py \
 
 - Make sure all WRF files are on the same grid (same `XLAT/XLONG`, `DX/DY`, and map factors).
 - When using multiple WRF files, pass them in chronological order or use a wildcard that sorts in time.
-- `--start-time` and `--end-time` must fall inside the WRF time range; the script uses the closest available WRF times.
+- `--start-time` and `--end-time` must fall inside the selected backend time range (WRF or MPAS); the script uses the closest available model times and warns if the request is more than 1 minute away.
 - No timezone conversion is applied to CLI time strings; pass times in the same basis as WRF `Times` (normally UTC).
 
 ---

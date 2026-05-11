@@ -1,5 +1,6 @@
 import math
 import pickle
+import warnings
 from glob import glob
 from pathlib import Path
 
@@ -272,7 +273,79 @@ def generate_parcels_from_point(lon_deg, lat_deg, cell_idx, n_vert, z_min, z_max
     )
 
 
-def _velocities(lat, lon, z, current_time_sec, times_sec, time_index_lo, time_index_hi, u, v, w, zmid, tree):
+def _select_seed_cells(lon_deg, lat_deg, seed_bbox, n_columns, rng=None):
+    if seed_bbox is None:
+        return None
+    if n_columns < 1:
+        raise ValueError("--n-columns must be >= 1 when --seed-bbox is used.")
+    if rng is None:
+        rng = np.random.default_rng()
+    lon_min, lat_min, lon_max, lat_max = seed_bbox
+    if lon_min > lon_max:
+        lon_min, lon_max = lon_max, lon_min
+    if lat_min > lat_max:
+        lat_min, lat_max = lat_max, lat_min
+    mask = (
+        (lon_deg >= lon_min)
+        & (lon_deg <= lon_max)
+        & (lat_deg >= lat_min)
+        & (lat_deg <= lat_max)
+    )
+    cells = np.where(mask)[0]
+    if cells.size == 0:
+        raise ValueError("seed-bbox does not overlap the MPAS grid.")
+    if n_columns > cells.size:
+        raise ValueError(
+            f"seed-bbox contains only {cells.size} cells; cannot sample {n_columns} columns."
+        )
+    return rng.choice(cells, size=n_columns, replace=False)
+
+
+def generate_parcels_from_cells(lon_deg, lat_deg, cell_indices, n_vert, z_min, z_max):
+    cell_indices = np.asarray(cell_indices, dtype=int).reshape(-1)
+    if n_vert <= 0 or cell_indices.size == 0:
+        return {
+            "lon": np.array([]),
+            "lat": np.array([]),
+            "z": np.array([]),
+            "cell": np.array([], dtype=int),
+            "z_init": np.array([]),
+        }
+    if n_vert == 1:
+        z_targets = np.array([0.5 * (z_min + z_max)], dtype=float)
+    else:
+        z_targets = np.linspace(z_min, z_max, num=n_vert, dtype=float)
+    n_cells = cell_indices.size
+    n_parcels = n_cells * n_vert
+    lon = np.empty(n_parcels, dtype=float)
+    lat = np.empty(n_parcels, dtype=float)
+    z = np.empty(n_parcels, dtype=float)
+    cell = np.empty(n_parcels, dtype=int)
+    idx = 0
+    for c in cell_indices:
+        lon[idx: idx + n_vert] = lon_deg[c]
+        lat[idx: idx + n_vert] = lat_deg[c]
+        z[idx: idx + n_vert] = z_targets
+        cell[idx: idx + n_vert] = c
+        idx += n_vert
+    return dict(lon=lon, lat=lat, z=z, cell=cell, z_init=z.copy())
+
+
+def _velocities(
+    lat,
+    lon,
+    z,
+    current_time_sec,
+    times_sec,
+    time_index_lo,
+    time_index_hi,
+    u,
+    v,
+    w,
+    zmid,
+    tree,
+    settle_vals=None,
+):
     t0 = float(times_sec[time_index_lo])
     t1 = float(times_sec[time_index_hi])
     current_time = float(current_time_sec)
@@ -296,6 +369,8 @@ def _velocities(lat, lon, z, current_time_sec, times_sec, time_index_lo, time_in
     uu = (1.0 - frac) * u0 + frac * u1
     vv = (1.0 - frac) * v0 + frac * v1
     ww = (1.0 - frac) * w0 + frac * w1
+    if settle_vals is not None:
+        ww = ww - np.asarray(settle_vals, dtype=float)
     dlat = vv / EARTH_RADIUS_M * 180.0 / math.pi
     dlon = uu / (EARTH_RADIUS_M * np.cos(np.deg2rad(np.clip(lat, -89.9, 89.9)))) * 180.0 / math.pi
     dz = ww
@@ -318,6 +393,8 @@ def advect_parcels_forward(
     end_time_index,
     integration_dt,
     release_time_sec=None,
+    settling_profile=None,
+    settling_recalc_interval=300.0,
 ):
     times_sec, t_ref = _prepare_time_seconds(times)
     lon_seed = parcels["lon"].copy()
@@ -355,6 +432,23 @@ def advect_parcels_forward(
     active_hist = [active.copy()]
     time_indices = [int(start_time_index)]
     current_sec = times_sec[start_time_index]
+
+    settling_enabled = settling_profile is not None
+    if settling_enabled:
+        settling_heights = np.asarray(settling_profile["heights_m"], dtype=float)
+        settling_velocity = np.asarray(settling_profile["velocity_ms"], dtype=float)
+        if settling_heights.ndim != 1 or settling_velocity.ndim != 1:
+            raise ValueError("settling_profile arrays must be 1-D.")
+        if settling_heights.size != settling_velocity.size:
+            raise ValueError("settling_profile heights and velocity must align.")
+        settle_steps = max(1, int(round(settling_recalc_interval / integration_dt)))
+        steps_until_settle_update = 0
+        parcel_settle = np.zeros(n_parcels, dtype=float)
+    else:
+        settle_steps = None
+        steps_until_settle_update = None
+        parcel_settle = None
+
     for it in range(int(start_time_index), int(end_time_index)):
         _diag(
             "Processing time index "
@@ -368,14 +462,84 @@ def advect_parcels_forward(
         while dt_remaining > 0 and active.any():
             dt_step = min(integration_dt, dt_remaining)
             idxs = np.where(active)[0]
-            pos = np.column_stack((lon[idxs], lat[idxs], z[idxs]))
-            v1, bad1 = _velocities(lat[idxs], lon[idxs], z[idxs], sub_time, times_sec, it, it + 1, u, v, w, zmid, tree)
+            if settling_enabled:
+                steps_until_settle_update -= 1
+                if steps_until_settle_update <= 0:
+                    settle_vals_now = np.interp(
+                        z[idxs],
+                        settling_heights,
+                        settling_velocity,
+                        left=settling_velocity[0],
+                        right=settling_velocity[-1],
+                    )
+                    parcel_settle[idxs] = settle_vals_now
+                    steps_until_settle_update = settle_steps
+                settle_vals_current = parcel_settle[idxs]
+            else:
+                settle_vals_current = None
+            v1, bad1 = _velocities(
+                lat[idxs],
+                lon[idxs],
+                z[idxs],
+                sub_time,
+                times_sec,
+                it,
+                it + 1,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k1 = dt_step * v1
-            v2, bad2 = _velocities(lat[idxs] + 0.5 * k1[:, 1], lon[idxs] + 0.5 * k1[:, 0], z[idxs] + 0.5 * k1[:, 2], sub_time + 0.5 * dt_step, times_sec, it, it + 1, u, v, w, zmid, tree)
+            v2, bad2 = _velocities(
+                lat[idxs] + 0.5 * k1[:, 1],
+                lon[idxs] + 0.5 * k1[:, 0],
+                z[idxs] + 0.5 * k1[:, 2],
+                sub_time + 0.5 * dt_step,
+                times_sec,
+                it,
+                it + 1,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k2 = dt_step * v2
-            v3, bad3 = _velocities(lat[idxs] + 0.5 * k2[:, 1], lon[idxs] + 0.5 * k2[:, 0], z[idxs] + 0.5 * k2[:, 2], sub_time + 0.5 * dt_step, times_sec, it, it + 1, u, v, w, zmid, tree)
+            v3, bad3 = _velocities(
+                lat[idxs] + 0.5 * k2[:, 1],
+                lon[idxs] + 0.5 * k2[:, 0],
+                z[idxs] + 0.5 * k2[:, 2],
+                sub_time + 0.5 * dt_step,
+                times_sec,
+                it,
+                it + 1,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k3 = dt_step * v3
-            v4, bad4 = _velocities(lat[idxs] + k3[:, 1], lon[idxs] + k3[:, 0], z[idxs] + k3[:, 2], sub_time + dt_step, times_sec, it, it + 1, u, v, w, zmid, tree)
+            v4, bad4 = _velocities(
+                lat[idxs] + k3[:, 1],
+                lon[idxs] + k3[:, 0],
+                z[idxs] + k3[:, 2],
+                sub_time + dt_step,
+                times_sec,
+                it,
+                it + 1,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k4 = dt_step * v4
             bad = bad1 | bad2 | bad3 | bad4
             if bad.any():
@@ -390,6 +554,8 @@ def advect_parcels_forward(
                 k2 = k2[good]
                 k3 = k3[good]
                 k4 = k4[good]
+                if settling_enabled:
+                    settle_vals_current = settle_vals_current[good]
             delta = (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
             lon[idxs] += delta[:, 0]
             lat[idxs] += delta[:, 1]
@@ -425,8 +591,43 @@ def advect_parcels_forward(
     )
 
 
-def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, receptor_lon, receptor_radius_m, receptor_min_h, receptor_max_h, start_time_index, integration_dt, emission_start_time=None, emission_end_time=None):
-    times_sec, t_ref = _prepare_time_seconds(times)
+def advect_parcels_backward(
+    parcels,
+    times,
+    u,
+    v,
+    w,
+    zmid,
+    tree,
+    receptor_lat,
+    receptor_lon,
+    receptor_radius_m,
+    receptor_min_h,
+    receptor_max_h,
+    start_time_index,
+    integration_dt,
+    parcel_radius_m=0.0,
+    emission_start_time=None,
+    emission_end_time=None,
+    settling_profile=None,
+    settling_recalc_interval=300.0,
+):
+    if integration_dt <= 0:
+        raise ValueError("integration_dt must be positive.")
+
+    times = np.asarray(times)
+    if times.dtype.kind == "M":
+        t_ref = emission_start_time if emission_start_time is not None else times[0]
+        times_sec, _ = _prepare_time_seconds(times, reference=t_ref)
+        emission_end_sec = None
+        if emission_end_time is not None:
+            emission_end_sec = float(
+                (np.datetime64(emission_end_time) - t_ref) / np.timedelta64(1, "s")
+            )
+    else:
+        times_sec, _ = _prepare_time_seconds(times)
+        emission_end_sec = None
+
     lon = parcels["lon"].copy()
     lat = parcels["lat"].copy()
     z = parcels["z"].copy()
@@ -441,6 +642,26 @@ def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, r
     time_indices = [int(start_time_index)]
     time_hist = [times[start_time_index]]
     current_sec = times_sec[start_time_index]
+
+    settling_enabled = settling_profile is not None
+    if settling_enabled:
+        settling_heights = np.asarray(settling_profile["heights_m"], dtype=float)
+        settling_velocity = np.asarray(settling_profile["velocity_ms"], dtype=float)
+        if settling_heights.ndim != 1 or settling_velocity.ndim != 1:
+            raise ValueError("settling_profile arrays must be 1-D.")
+        if settling_heights.size != settling_velocity.size:
+            raise ValueError("settling_profile heights and velocity must align.")
+        settle_steps = max(1, int(round(settling_recalc_interval / integration_dt)))
+        steps_until_settle_update = 0
+        parcel_settle = np.zeros(lon.size, dtype=float)
+    else:
+        settle_steps = None
+        steps_until_settle_update = None
+        parcel_settle = None
+
+    radius_eff = max(float(receptor_radius_m) + float(parcel_radius_m), 0.0)
+    reached_start = False
+
     for it in range(int(start_time_index), 0, -1):
         _diag(
             "Processing time index "
@@ -454,13 +675,85 @@ def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, r
         while dt_remaining > 0 and active.any():
             dt_step = min(integration_dt, dt_remaining)
             idxs = np.where(active)[0]
-            v1, bad1 = _velocities(lat[idxs], lon[idxs], z[idxs], sub_time, times_sec, it - 1, it, u, v, w, zmid, tree)
+            if settling_enabled:
+                steps_until_settle_update -= 1
+                if steps_until_settle_update <= 0:
+                    settle_vals_now = np.interp(
+                        z[idxs],
+                        settling_heights,
+                        settling_velocity,
+                        left=settling_velocity[0],
+                        right=settling_velocity[-1],
+                    )
+                    parcel_settle[idxs] = settle_vals_now
+                    steps_until_settle_update = settle_steps
+                settle_vals_current = parcel_settle[idxs]
+            else:
+                settle_vals_current = None
+
+            v1, bad1 = _velocities(
+                lat[idxs],
+                lon[idxs],
+                z[idxs],
+                sub_time,
+                times_sec,
+                it - 1,
+                it,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k1 = -dt_step * v1
-            v2, bad2 = _velocities(lat[idxs] + 0.5 * k1[:, 1], lon[idxs] + 0.5 * k1[:, 0], z[idxs] + 0.5 * k1[:, 2], sub_time - 0.5 * dt_step, times_sec, it - 1, it, u, v, w, zmid, tree)
+            v2, bad2 = _velocities(
+                lat[idxs] + 0.5 * k1[:, 1],
+                lon[idxs] + 0.5 * k1[:, 0],
+                z[idxs] + 0.5 * k1[:, 2],
+                sub_time - 0.5 * dt_step,
+                times_sec,
+                it - 1,
+                it,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k2 = -dt_step * v2
-            v3, bad3 = _velocities(lat[idxs] + 0.5 * k2[:, 1], lon[idxs] + 0.5 * k2[:, 0], z[idxs] + 0.5 * k2[:, 2], sub_time - 0.5 * dt_step, times_sec, it - 1, it, u, v, w, zmid, tree)
+            v3, bad3 = _velocities(
+                lat[idxs] + 0.5 * k2[:, 1],
+                lon[idxs] + 0.5 * k2[:, 0],
+                z[idxs] + 0.5 * k2[:, 2],
+                sub_time - 0.5 * dt_step,
+                times_sec,
+                it - 1,
+                it,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k3 = -dt_step * v3
-            v4, bad4 = _velocities(lat[idxs] + k3[:, 1], lon[idxs] + k3[:, 0], z[idxs] + k3[:, 2], sub_time - dt_step, times_sec, it - 1, it, u, v, w, zmid, tree)
+            v4, bad4 = _velocities(
+                lat[idxs] + k3[:, 1],
+                lon[idxs] + k3[:, 0],
+                z[idxs] + k3[:, 2],
+                sub_time - dt_step,
+                times_sec,
+                it - 1,
+                it,
+                u,
+                v,
+                w,
+                zmid,
+                tree,
+                settle_vals=settle_vals_current,
+            )
             k4 = -dt_step * v4
             bad = bad1 | bad2 | bad3 | bad4
             if bad.any():
@@ -475,6 +768,8 @@ def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, r
                 k2 = k2[good]
                 k3 = k3[good]
                 k4 = k4[good]
+                if settling_enabled:
+                    settle_vals_current = settle_vals_current[good]
             delta = (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
             lon[idxs] += delta[:, 0]
             lat[idxs] += delta[:, 1]
@@ -485,24 +780,50 @@ def advect_parcels_backward(parcels, times, u, v, w, zmid, tree, receptor_lat, r
                 active[idxs[out]] = False
             dt_remaining -= dt_step
             sub_time -= dt_step
-            # receptor hit test
-            dlat = np.deg2rad(lat[idxs] - receptor_lat)
-            dlon = np.deg2rad(lon[idxs] - receptor_lon) * np.cos(np.deg2rad(receptor_lat))
+
+            idxs_after = np.where(active)[0]
+            if idxs_after.size == 0:
+                current_sec = sub_time
+                continue
+
+            # Receptor hit test (horizontal circle + vertical bounds)
+            dlat = np.deg2rad(lat[idxs_after] - receptor_lat)
+            dlon = np.deg2rad(lon[idxs_after] - receptor_lon) * np.cos(np.deg2rad(receptor_lat))
             horiz = np.sqrt((EARTH_RADIUS_M * dlat) ** 2 + (EARTH_RADIUS_M * dlon) ** 2)
-            hit = (horiz <= receptor_radius_m) & (z[idxs] >= receptor_min_h) & (z[idxs] <= receptor_max_h)
+            hit = (
+                (horiz <= radius_eff)
+                & (z[idxs_after] >= receptor_min_h)
+                & (z[idxs_after] <= receptor_max_h)
+            )
             if hit.any():
-                hit_idxs = idxs[hit]
-                arrived[hit_idxs] = True
-                arrival_time[hit_idxs] = max(sub_time, 0.0)
-                arrival_z[hit_idxs] = z[hit_idxs]
-                active[hit_idxs] = False
-        current_sec = sub_time
+                hit_idxs_all = idxs_after[hit]
+                z_hit = z[idxs_after][hit]
+                valid_hit = np.ones(hit_idxs_all.size, dtype=bool)
+                if emission_end_sec is not None:
+                    valid_hit &= sub_time <= emission_end_sec + 1e-6
+                if emission_start_time is not None:
+                    valid_hit &= sub_time >= -1e-6
+                if np.any(valid_hit):
+                    hit_idxs = hit_idxs_all[valid_hit]
+                    arrived[hit_idxs] = True
+                    arrival_time[hit_idxs] = np.maximum(sub_time, 0.0)
+                    arrival_z[hit_idxs] = z_hit[valid_hit]
+                    active[hit_idxs] = False
+
+            current_sec = sub_time
+            if emission_start_time is not None and sub_time <= 0.0:
+                reached_start = True
+                break
+
         lon_hist.append(lon.copy())
         lat_hist.append(lat.copy())
         z_hist.append(z.copy())
         active_hist.append(active.copy())
         time_indices.append(it - 1)
         time_hist.append(times[it - 1])
+        if reached_start:
+            break
+
     return dict(
         lon=lon,
         lat=lat,
@@ -783,7 +1104,7 @@ def plot_mpas_missed_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, 
     return True
 
 
-def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, lat_deg, lon_deg, out_path, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, cmap_name="rainbow", source_lat=None, source_lon=None):
+def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indices, parcel_values, lat_deg, lon_deg, out_path, title=None, colorbar_label="Value", figure_dpi=200, map_extent=None, cmap_name="rainbow", source_lat=None, source_lon=None, seed_bbox=None):
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     values = np.asarray(parcel_values, dtype=float)
@@ -859,6 +1180,7 @@ def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indice
             zorder=7,
             transform=PLATE_CARREE,
         )
+    plot_seed_bbox(ax, seed_bbox)
 
     ax.set_title(title or "Parcel trajectories")
 
@@ -896,6 +1218,7 @@ def plot_mpas_trajectories_by_age(
     map_extent=None,
     source_lat=None,
     source_lon=None,
+    seed_bbox=None,
 ):
     """Plot trajectories colored by parcel age since release, matching WRF logic."""
     lon_hist = np.asarray(traj_lon, dtype=float)
@@ -995,6 +1318,7 @@ def plot_mpas_trajectories_by_age(
             zorder=7,
             transform=PLATE_CARREE,
         )
+    plot_seed_bbox(ax, seed_bbox)
 
     ax.set_xlabel("")
     ax.set_ylabel("")
@@ -1056,9 +1380,22 @@ def plot_mpas_vertical_distribution(parcels, out_path, z_min, z_max, figure_dpi=
     plt.close(fig)
 
 
-def plot_mpas_seed_locations(lat_deg, lon_deg, parcels, out_path, title=None, figure_dpi=200, map_extent=None):
+def plot_mpas_seed_locations(lat_deg, lon_deg, parcels, out_path, title=None, figure_dpi=200, map_extent=None, source_lat=None, source_lon=None, seed_bbox=None):
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
     ax.scatter(parcels["lon"], parcels["lat"], s=PARCEL_MARKER_SIZE, c="red", edgecolors=PARCEL_MARKER_EDGE, linewidths=PARCEL_MARKER_LINEWIDTH, alpha=PARCEL_MARKER_ALPHA, transform=PLATE_CARREE, zorder=5)
+    if source_lat is not None and source_lon is not None:
+        ax.scatter(
+            source_lon,
+            source_lat,
+            marker="^",
+            s=80,
+            c="red",
+            edgecolors="black",
+            linewidths=0.4,
+            zorder=7,
+            transform=PLATE_CARREE,
+        )
+    plot_seed_bbox(ax, seed_bbox)
     if title:
         ax.set_title(title)
     fig.savefig(out_path, dpi=figure_dpi)
@@ -1079,6 +1416,7 @@ def plot_mpas_hourly_snapshots(
     map_extent=None,
     source_lat=None,
     source_lon=None,
+    seed_bbox=None,
     tail_enabled=False,
     tail_steps=6,
 ):
@@ -1198,6 +1536,7 @@ def plot_mpas_hourly_snapshots(
                 zorder=7,
                 transform=PLATE_CARREE,
             )
+        plot_seed_bbox(ax, seed_bbox)
         if traj_times.size > snap_idx:
             snapshot_time = traj_times[snap_idx]
             if np.issubdtype(traj_times.dtype, np.datetime64):
@@ -1240,6 +1579,7 @@ def plot_mpas_deposited_parcels_by_hour(
     map_extent=None,
     source_lat=None,
     source_lon=None,
+    seed_bbox=None,
 ):
     traj_lon = np.asarray(traj_lon, dtype=float)
     traj_lat = np.asarray(traj_lat, dtype=float)
@@ -1305,6 +1645,7 @@ def plot_mpas_deposited_parcels_by_hour(
             zorder=9,
             transform=PLATE_CARREE,
         )
+    plot_seed_bbox(ax, seed_bbox)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_title(
@@ -1416,12 +1757,39 @@ def run_backtraj(args):
         start_time = times_arr[-1]
     if start_time < times_arr[0] or start_time > times_arr[-1]:
         raise ValueError("start time outside MPAS time range.")
-    start_idx = int(np.argmin(np.abs(times_arr - start_time)))
+    time_diffs_start = np.abs(times_arr - start_time)
+    start_idx = int(np.argmin(time_diffs_start))
+    if args.start_time is not None and time_diffs_start[start_idx] > np.timedelta64(1, "m"):
+        warnings.warn(
+            f"Provided start time {start_time} is more than 1 minute away from "
+            f"the closest MPAS time {times_arr[start_idx]}. Using the closest time."
+        )
     _diag(
         "Using start time "
         f"{times_arr[start_idx]} at index {start_idx} "
         f"(closest to requested {start_time})."
     )
+
+    emission_start_time = None
+    if args.emission_start is not None:
+        emission_start_time = np.datetime64(args.emission_start.replace("_", "T"))
+        if emission_start_time < times_arr[0] or emission_start_time > times_arr[-1]:
+            raise ValueError(
+                f"emission start time {emission_start_time} outside MPAS time range "
+                f"[{times_arr[0]}, {times_arr[-1]}]."
+            )
+    emission_end_time = None
+    if args.emission_end is not None:
+        if emission_start_time is None:
+            raise ValueError("--emission-end requires --emission-start to be set.")
+        emission_end_time = np.datetime64(args.emission_end.replace("_", "T"))
+        if emission_end_time <= emission_start_time:
+            raise ValueError("emission-end must be later than emission-start.")
+        if emission_end_time < times_arr[0] or emission_end_time > times_arr[-1]:
+            raise ValueError(
+                f"emission end time {emission_end_time} outside MPAS time range "
+                f"[{times_arr[0]}, {times_arr[-1]}]."
+            )
 
     with Dataset(args.column, "r") as ds_col:
         _diag(f"Reading MPAS column field '{args.column_var}' from {args.column}.")
@@ -1506,8 +1874,10 @@ def run_backtraj(args):
         args.receptor_max_h,
         start_idx,
         args.integration_dt,
-        emission_start_time=np.datetime64(args.emission_start.replace("_", "T")) if args.emission_start else None,
-        emission_end_time=np.datetime64(args.emission_end.replace("_", "T")) if args.emission_end else None,
+        parcel_radius_m=args.parcel_radius,
+        emission_start_time=emission_start_time,
+        emission_end_time=emission_end_time,
+        settling_profile=settling_profile,
     )
     _diag(
         "MPAS backward advection complete: "
@@ -1524,7 +1894,11 @@ def run_backtraj(args):
         _diag(f"Trajectory figure saved to '{args.trajectory_figure}'.")
 
     if args.trajectory_age:
-        start_sec = float((times_arr[start_idx] - times_arr[0]) / np.timedelta64(1, "s"))
+        if times_arr.dtype.kind == "M":
+            t_ref_age = emission_start_time if emission_start_time is not None else times_arr[0]
+            start_sec = float((times_arr[start_idx] - t_ref_age) / np.timedelta64(1, "s"))
+        else:
+            start_sec = float(times_arr[start_idx])
         ages = np.maximum((start_sec - result["arrival_time"]) / 3600.0, 0.0)
         age_subset = ages[result["arrived"]]
         age_suffix = ""
@@ -1554,7 +1928,11 @@ def run_backtraj(args):
     arrival_time_sec = np.asarray(result["arrival_time"], dtype=float)[arrived_mask]
     arrival_z_m = np.asarray(result["arrival_z"], dtype=float)[arrived_mask]
 
-    start_sec = float((times_arr[start_idx] - times_arr[0]) / np.timedelta64(1, "s"))
+    if times_arr.dtype.kind == "M":
+        t_ref_age = emission_start_time if emission_start_time is not None else times_arr[0]
+        start_sec = float((times_arr[start_idx] - t_ref_age) / np.timedelta64(1, "s"))
+    else:
+        start_sec = float(times_arr[start_idx])
     arrival_age_hours = np.maximum((start_sec - arrival_time_sec) / 3600.0, 0.0)
     emission_time_hours = np.maximum(arrival_time_sec, 0.0) / 3600.0
 
@@ -1647,22 +2025,50 @@ def run_backtraj(args):
         else:
             _diag("No missed parcels found; skipping missed-trajectory figure.")
 
-    if args.output_txt:
+    if args.arrival_bin_minutes <= 0:
+        _diag("arrival_bin_minutes <= 0, skipping time-height series.")
+    elif args.output_txt:
         arrival_z = arrival_z_m
         arrival_time = arrival_time_sec
         z_bins = zmid[np.argmin(np.abs(lat - args.receptor_lat) + np.abs(lon - args.receptor_lon))]
         z_edges = np.concatenate(([max(0.0, z_bins[0] - 0.5 * (z_bins[1] - z_bins[0]))], 0.5 * (z_bins[:-1] + z_bins[1:]), [z_bins[-1] + 0.5 * (z_bins[-1] - z_bins[-2])]))
         t_sec = np.maximum(arrival_time, 0.0)
-        t_edges = np.arange(0.0, max(float(np.nanmax(t_sec)) if t_sec.size else 0.0, args.arrival_bin_minutes * 60.0) + args.arrival_bin_minutes * 60.0, args.arrival_bin_minutes * 60.0)
-        if t_edges.size < 2:
-            t_edges = np.array([0.0, args.arrival_bin_minutes * 60.0])
-        emission = np.zeros((z_edges.size - 1, t_edges.size - 1), dtype=float)
-        mass_emission = np.zeros_like(emission)
-        if t_sec.size:
-            t_bin = np.clip(np.digitize(t_sec, t_edges) - 1, 0, t_edges.size - 2)
-            z_bin = np.clip(np.digitize(arrival_z, z_edges) - 1, 0, z_edges.size - 2)
-            np.add.at(emission, (z_bin, t_bin), 1.0)
-            np.add.at(mass_emission, (z_bin, t_bin), arrival_mass)
+        bin_width_sec = args.arrival_bin_minutes * 60.0
+        if (
+            emission_start_time is not None
+            and emission_end_time is not None
+            and times_arr.dtype.kind == "M"
+        ):
+            duration_sec = float((emission_end_time - emission_start_time) / np.timedelta64(1, "s"))
+            if duration_sec <= 0:
+                raise ValueError("emission duration must be positive.")
+            n_time_bins = max(1, int(np.ceil(duration_sec / bin_width_sec)))
+            t_edges = np.arange(n_time_bins + 1, dtype=float) * bin_width_sec
+            emission = np.zeros((z_edges.size - 1, n_time_bins), dtype=float)
+            mass_emission = np.zeros_like(emission)
+            if t_sec.size:
+                valid_window = (t_sec >= 0.0) & (t_sec < duration_sec + bin_width_sec)
+                if np.any(valid_window):
+                    t_bin = np.floor(t_sec[valid_window] / bin_width_sec).astype(int)
+                    t_bin = np.clip(t_bin, 0, n_time_bins - 1)
+                    z_bin = np.clip(np.digitize(arrival_z[valid_window], z_edges) - 1, 0, z_edges.size - 2)
+                    np.add.at(emission, (z_bin, t_bin), 1.0)
+                    np.add.at(mass_emission, (z_bin, t_bin), arrival_mass[valid_window])
+        else:
+            t_edges = np.arange(
+                0.0,
+                max(float(np.nanmax(t_sec)) if t_sec.size else 0.0, bin_width_sec) + bin_width_sec,
+                bin_width_sec,
+            )
+            if t_edges.size < 2:
+                t_edges = np.array([0.0, bin_width_sec])
+            emission = np.zeros((z_edges.size - 1, t_edges.size - 1), dtype=float)
+            mass_emission = np.zeros_like(emission)
+            if t_sec.size:
+                t_bin = np.clip(np.digitize(t_sec, t_edges) - 1, 0, t_edges.size - 2)
+                z_bin = np.clip(np.digitize(arrival_z, z_edges) - 1, 0, z_edges.size - 2)
+                np.add.at(emission, (z_bin, t_bin), 1.0)
+                np.add.at(mass_emission, (z_bin, t_bin), arrival_mass)
         with open(args.output_txt, "w", encoding="utf-8") as fh:
             fh.write("time " + " ".join(f"{v:.0f}" for v in t_edges[:-1]) + "\n")
             fh.write("height " + " ".join(f"{v:.1f}" for v in z_edges[:-1] / 1000.0) + "\n")
@@ -1733,8 +2139,8 @@ def run_backtraj(args):
                 receptor=dict(lat=args.receptor_lat, lon=args.receptor_lon, radius_m=args.receptor_radius),
                 receptor_min_h=args.receptor_min_h,
                 receptor_max_h=args.receptor_max_h,
-                emission_start=np.datetime64(args.emission_start.replace("_", "T")) if args.emission_start else None,
-                emission_end=np.datetime64(args.emission_end.replace("_", "T")) if args.emission_end else None,
+                emission_start=emission_start_time,
+                emission_end=emission_end_time,
                 target="mpas",
             ),
         )
@@ -1754,30 +2160,51 @@ def run_forwtraj(args):
         "MPAS dimensions: "
         f"nCells={lat.size}, nVertLevels={zmid.shape[1]}, nTimes={times_arr.size}."
     )
-    if args.start_time is not None:
-        start_time = np.datetime64(args.start_time.replace("_", "T"))
-        start_idx = int(np.argmin(np.abs(times_arr - start_time)))
-    else:
-        start_idx = 0
-    if args.end_time is not None:
-        end_time = np.datetime64(args.end_time.replace("_", "T"))
-        end_idx = int(np.argmin(np.abs(times_arr - end_time)))
-    else:
-        end_idx = times_arr.size - 1
-    if args.source_lat is None or args.source_lon is None:
-        raise ValueError("MPAS forward mode requires --source-lat and --source-lon.")
+    if args.start_time is None or args.end_time is None:
+        raise ValueError("Both --start-time and --end-time are required.")
+    start_time = np.datetime64(args.start_time.replace("_", "T"))
+    end_time = np.datetime64(args.end_time.replace("_", "T"))
+    if start_time >= end_time:
+        raise ValueError("--end-time must be later than --start-time.")
+    if start_time < times_arr[0] or start_time > times_arr[-1]:
+        raise ValueError("Start time is outside the MPAS time range.")
+    if end_time < times_arr[0] or end_time > times_arr[-1]:
+        raise ValueError("End time is outside the MPAS time range.")
+
+    time_diffs_start = np.abs(times_arr - start_time)
+    start_idx = int(np.argmin(time_diffs_start))
+    if time_diffs_start[start_idx] > np.timedelta64(1, "m"):
+        warnings.warn(
+            f"Provided start time {start_time} is more than 1 minute away from "
+            f"the closest MPAS time {times_arr[start_idx]}. Using the closest time."
+        )
+
+    time_diffs_end = np.abs(times_arr - end_time)
+    end_idx = int(np.argmin(time_diffs_end))
+    if time_diffs_end[end_idx] > np.timedelta64(1, "m"):
+        warnings.warn(
+            f"Provided end time {end_time} is more than 1 minute away from "
+            f"the closest MPAS time {times_arr[end_idx]}. Using the closest time."
+        )
+    source_has_lat = args.source_lat is not None
+    source_has_lon = args.source_lon is not None
+    if source_has_lat != source_has_lon:
+        raise ValueError("Provide both --source-lat and --source-lon together.")
     if end_idx <= start_idx:
         raise ValueError("End time index is not later than start time index.")
     _diag(
         "Advection window: index "
         f"{start_idx} ({times_arr[start_idx]}) -> {end_idx} ({times_arr[end_idx]})."
     )
-    src_idx = int(_nearest_cells(data["tree"], np.asarray([args.source_lat]), np.asarray([args.source_lon]))[0])
-    _diag(
-        "Selected MPAS source cell "
-        f"{src_idx} at lat={lat[src_idx]:.4f}, lon={lon[src_idx]:.4f} "
-        f"for requested lat={args.source_lat:.4f}, lon={args.source_lon:.4f}."
-    )
+    src_idx = None
+    if source_has_lat and source_has_lon:
+        src_idx = int(_nearest_cells(data["tree"], np.asarray([args.source_lat]), np.asarray([args.source_lon]))[0])
+        _diag(
+            "Selected MPAS source cell "
+            f"{src_idx} at lat={lat[src_idx]:.4f}, lon={lon[src_idx]:.4f} "
+            f"for requested lat={args.source_lat:.4f}, lon={args.source_lon:.4f}."
+        )
+    seed_bbox = tuple(args.seed_bbox) if args.seed_bbox is not None else None
     z_min_cfg = 2000.0 if args.z_min is None else float(args.z_min)
     z_max_cfg = 25000.0 if args.z_max is None else float(args.z_max)
     n_vert_cfg = 30 if args.n_vert is None else int(args.n_vert)
@@ -1790,6 +2217,8 @@ def run_forwtraj(args):
     parcels_for_seed_plot = None
 
     if args.emission_matrix:
+        if src_idx is None:
+            raise ValueError("Emission-matrix mode requires --source-lat and --source-lon.")
         matrix = parse_emission_matrix_file(args.emission_matrix)
         _diag(f"Loaded emission matrix file: {args.emission_matrix}")
         _diag(
@@ -1869,11 +2298,37 @@ def run_forwtraj(args):
             f"{str(release_times_utc.min())} -> {str(release_times_utc.max())}."
         )
     else:
-        parcels = generate_parcels_from_point(
-            lon[src_idx], lat[src_idx], src_idx, n_vert_cfg, z_min_cfg, z_max_cfg
+        seed_cells = None
+        if args.seed_bbox is not None:
+            rng = np.random.default_rng()
+            seed_cells = _select_seed_cells(
+                lon_deg=lon,
+                lat_deg=lat,
+                seed_bbox=seed_bbox,
+                n_columns=int(args.n_columns),
+                rng=rng,
+            )
+        elif src_idx is not None:
+            seed_cells = np.array([src_idx], dtype=int)
+        else:
+            raise ValueError("Provide --source-lat/--source-lon or --seed-bbox.")
+
+        parcels = generate_parcels_from_cells(
+            lon_deg=lon,
+            lat_deg=lat,
+            cell_indices=seed_cells,
+            n_vert=n_vert_cfg,
+            z_min=z_min_cfg,
+            z_max=z_max_cfg,
         )
         parcels_for_seed_plot = parcels
-        _diag(f"Initialized {parcels['lon'].size} MPAS parcels.")
+        if args.seed_bbox is not None:
+            _diag(
+                f"Initialized {parcels['lon'].size} MPAS parcels from "
+                f"{seed_cells.size} seed cells in --seed-bbox."
+            )
+        else:
+            _diag(f"Initialized {parcels['lon'].size} MPAS parcels.")
 
     for out_path in (
         getattr(args, "seeds_figure", None),
@@ -1884,6 +2339,14 @@ def run_forwtraj(args):
         args.state_pickle,
     ):
         _ensure_parent_dir(out_path)
+
+    settling_profile = None
+    if args.aer_type is not None:
+        settling_profile = dict(
+            heights_m=np.asarray(Z_M, dtype=float),
+            velocity_ms=np.asarray(SETTLING_VEL_MS[args.aer_type], dtype=float),
+        )
+        _diag(f"Applying settling profile for '{args.aer_type}'.")
 
     _diag("Starting MPAS forward advection.")
     result = advect_parcels_forward(
@@ -1898,11 +2361,12 @@ def run_forwtraj(args):
         end_idx,
         args.integration_dt,
         release_time_sec=release_time_sec,
+        settling_profile=settling_profile,
     )
     _diag("MPAS forward advection complete.")
     seeds_figure = getattr(args, "seeds_figure", None)
     if seeds_figure:
-        plot_mpas_seed_locations(lat, lon, parcels_for_seed_plot, seeds_figure, title="MPAS parcel seeds", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        plot_mpas_seed_locations(lat, lon, parcels_for_seed_plot, seeds_figure, title="MPAS parcel seeds", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon, seed_bbox=seed_bbox)
         _diag(f"Parcel seed map saved to '{seeds_figure}'.")
     if args.seeds_vertical_figure:
         z_plot = np.asarray(parcels_for_seed_plot.get("z_init", []), dtype=float)
@@ -1917,7 +2381,7 @@ def run_forwtraj(args):
             plot_mpas_vertical_distribution(parcels_for_seed_plot, args.seeds_vertical_figure, z_plot_min, z_plot_max, args.figure_dpi)
             _diag(f"Parcel vertical distribution saved to '{args.seeds_vertical_figure}'.")
     if args.hourly_output_dir:
-        n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon, tail_enabled=True, tail_steps=6)
+        n_hourly = plot_mpas_hourly_snapshots(lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], result["trajectory_z"], result["trajectory_times"], result["trajectory_time_indices"], args.hourly_output_dir, figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, source_lat=args.source_lat, source_lon=args.source_lon, seed_bbox=seed_bbox, tail_enabled=True, tail_steps=6)
         _diag(f"Hourly snapshots saved: {n_hourly} file(s) in '{args.hourly_output_dir}'.")
     if args.initial_height_figure:
         init_heights_km = np.asarray(parcels["z_init"], dtype=float) / 1000.0
@@ -1927,7 +2391,7 @@ def run_forwtraj(args):
             "Parcel trajectories coloured by initial height "
             f"(min={init_min_km:.2f} km, max={init_max_km:.2f} km)"
         )
-        plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), init_heights_km, lat, lon, args.initial_height_figure, title=title, colorbar_label="Initial height (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="rainbow", source_lat=args.source_lat, source_lon=args.source_lon)
+        plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), init_heights_km, lat, lon, args.initial_height_figure, title=title, colorbar_label="Initial height (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="rainbow", source_lat=args.source_lat, source_lon=args.source_lon, seed_bbox=seed_bbox)
         _diag(f"Initial-height figure saved to '{args.initial_height_figure}'.")
     if args.age_figure:
         saved_age = plot_mpas_trajectories_by_age(
@@ -1943,6 +2407,7 @@ def run_forwtraj(args):
             map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
             source_lat=args.source_lat,
             source_lon=args.source_lon,
+            seed_bbox=seed_bbox,
         )
         if saved_age:
             _diag(f"Age-colored figure saved to '{args.age_figure}'.")
@@ -1960,6 +2425,7 @@ def run_forwtraj(args):
             map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
             source_lat=args.source_lat,
             source_lon=args.source_lon,
+            seed_bbox=seed_bbox,
         )
         if saved_dep:
             _diag(f"Deposition-hour figure saved to '{args.deposition_figure}'.")
