@@ -154,8 +154,6 @@ def main(args=None):
 
     emission_time_hours = state["trajectories"].get("emission_time_hours")
     emission_start_time = state.get("metadata", {}).get("emission_start")
-    if emission_start_time is None:
-        emission_start_time = np.datetime64("2025-11-23T08:30:00")
 
     if emission_time_hours is None:
         arrival_age_hours = state["trajectories"].get("arrival_age_hours")
@@ -164,15 +162,15 @@ def main(args=None):
         if start_time is not None:
             start_time = np.datetime64(start_time)
 
-        if arrival_age_hours is not None and start_time is not None:
+        if arrival_age_hours is not None and start_time is not None and emission_start_time is not None:
             start_time_sec = (
                 (start_time - emission_start_time) / np.timedelta64(1, "s")
             ).astype(float)
             emission_time_hours = start_time_sec / 3600.0 - np.asarray(arrival_age_hours, dtype=float)
-            print("[diag] Derived emission-time data from arrival ages using default emission start 2025-11-23 08:30 UTC.")
+            print("[diag] Derived emission-time data from arrival ages.")
         else:
-            print("[diag] No emission-time data in pickle and cannot derive it; skipping emission-time plot.")
-    if emission_time_hours is not None:
+            print("[diag] No emission-time data in pickle and cannot derive it (missing emission_start and/or start_time); skipping emission-time plot.")
+    if emission_time_hours is not None and emission_start_time is not None:
         plot_parcel_emission_time_map(
             column2d=column,
             xlat=xlat,

@@ -824,6 +824,7 @@ def advect_parcels_backward(
         if reached_start:
             break
 
+    finish_index = int(time_indices[-1]) if len(time_indices) > 0 else 0
     return dict(
         lon=lon,
         lat=lat,
@@ -838,9 +839,9 @@ def advect_parcels_backward(
         trajectory_time_indices=np.asarray(time_indices, dtype=int),
         trajectory_times=np.asarray(time_hist),
         advection_start_index=int(start_time_index),
-        advection_finish_index=0,
+        advection_finish_index=finish_index,
         advection_start_time=times[start_time_index],
-        advection_finish_time=times[0],
+        advection_finish_time=times[finish_index],
     )
 
 
@@ -1236,36 +1237,50 @@ def plot_mpas_trajectories_by_age(
         print("[diag] Not enough trajectory times for age plot.")
         return False
 
-    if np.issubdtype(times_arr.dtype, np.datetime64):
-        age_hours = (times_arr - times_arr[0]) / np.timedelta64(1, "h")
-    else:
-        age_hours = (np.asarray(times_arr, dtype=float) - float(times_arr[0])) / 3600.0
-    age_hours = np.asarray(age_hours, dtype=float)
-
     fig, ax = _setup_geo_axes(lat_deg, lon_deg, map_extent=map_extent)
-
-    n_bins = 10
-    age_min = float(np.nanmin(age_hours))
-    age_max = float(np.nanmax(age_hours))
-    if np.isclose(age_min, age_max):
-        age_max = age_min + 0.1
-    age_bins = np.linspace(age_min, age_max, n_bins + 1)
-    cmap = plt.get_cmap("gist_ncar", n_bins)
-    palette = cmap(np.arange(n_bins))
 
     segments = np.array([
         np.stack([lon_hist[:-1, :], lat_hist[:-1, :]], axis=2),
         np.stack([lon_hist[1:, :], lat_hist[1:, :]], axis=2),
     ]).transpose(2, 1, 0, 3)
 
-    # Match WRF logic: draw segments while parcel is active at segment start.
+    if np.issubdtype(times_arr.dtype, np.datetime64):
+        times_hours = np.asarray((times_arr - times_arr[0]) / np.timedelta64(1, "h"), dtype=float)
+    else:
+        times_hours = (np.asarray(times_arr, dtype=float) - float(times_arr[0])) / 3600.0
+    times_hours = np.asarray(times_hours, dtype=float)
+
+    n_parcels = lon_hist.shape[1]
+    release_hours = np.full(n_parcels, np.nan, dtype=float)
+    for p in range(n_parcels):
+        active_idx = np.where(active_hist[:, p])[0]
+        if active_idx.size:
+            release_hours[p] = times_hours[int(active_idx[0])]
+
+    # Age at each segment start, per parcel (time since parcel release).
+    age_seg_matrix = times_hours[:-1][None, :] - release_hours[:, None]
+    age_seg_matrix = np.where(np.isfinite(age_seg_matrix), np.maximum(age_seg_matrix, 0.0), np.nan)
+
+    # Match WRF line-segment logic: draw segments while parcel is active at segment start.
     active_mask = active_hist[:-1, :].T
+    valid_age = age_seg_matrix[active_mask & np.isfinite(age_seg_matrix)]
+    n_bins = 10
+    if valid_age.size == 0:
+        age_bins = np.linspace(0.0, 1.0, n_bins + 1)
+    else:
+        age_min = float(np.nanmin(valid_age))
+        age_max = float(np.nanmax(valid_age))
+        if np.isclose(age_min, age_max):
+            age_max = age_min + 0.1
+        age_bins = np.linspace(age_min, age_max, n_bins + 1)
+    cmap = plt.get_cmap("gist_ncar", n_bins)
+    palette = cmap(np.arange(n_bins))
+
     if active_mask.any():
-        age_seg = age_hours[:-1]
-        color_idx = np.digitize(age_seg, age_bins) - 1
-        color_idx = np.clip(color_idx, 0, n_bins - 1)
-        colors_per_step = palette[color_idx]
-        colors_all = np.repeat(colors_per_step[None, :, :], lon_hist.shape[1], axis=0)
+        age_for_color = np.nan_to_num(age_seg_matrix, nan=age_bins[0], posinf=age_bins[-1], neginf=age_bins[0])
+        color_idx_all = np.digitize(age_for_color, age_bins) - 1
+        color_idx_all = np.clip(color_idx_all, 0, n_bins - 1)
+        colors_all = palette[color_idx_all]
         colors_to_plot = colors_all[active_mask]
         segments_to_plot = segments[active_mask]
         lc = LineCollection(
@@ -1279,7 +1294,6 @@ def plot_mpas_trajectories_by_age(
         ax.add_collection(lc)
 
     # Draw deposited parcel stop points in black, analogous to WRF.
-    n_parcels = lon_hist.shape[1]
     stop_idx = np.full(n_parcels, -1, dtype=int)
     for p in range(n_parcels):
         inactive = np.where(~active_hist[:, p])[0]
@@ -2118,7 +2132,7 @@ def run_backtraj(args):
                 active=result["trajectory_active"],
                 arrived_mask=result["arrived"],
                 arrival_time_sec=result["arrival_time"],
-                arrival_age_hours=np.maximum(result["arrival_time"], 0.0) / 3600.0,
+                arrival_age_hours=arrival_age_hours,
                 arrival_z=result["arrival_z"],
                 arrival_height_m=result["arrival_z"],
                 initial_height_m=parcels_init.get("z_init"),
@@ -2134,7 +2148,7 @@ def run_backtraj(args):
             metadata=dict(
                 start_time=times_arr[start_idx],
                 start_time_index=start_idx,
-                finish_time_index=0,
+                finish_time_index=int(result["advection_finish_index"]),
                 parcels_initialized=parcels_init["lon"].size,
                 receptor=dict(lat=args.receptor_lat, lon=args.receptor_lon, radius_m=args.receptor_radius),
                 receptor_min_h=args.receptor_min_h,

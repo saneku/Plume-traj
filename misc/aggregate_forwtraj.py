@@ -37,6 +37,7 @@ from src.plume_mpas import (
     plot_mpas_deposited_parcels_by_hour,
     plot_mpas_hourly_snapshots,
     plot_mpas_parcel_trajectories,
+    plot_mpas_trajectories_by_age,
     plot_mpas_vertical_distribution,
 )
 
@@ -357,6 +358,7 @@ def main():
                 map_extent=map_extent,
                 source_lat=script_args.get("source_lat"),
                 source_lon=script_args.get("source_lon"),
+                seed_bbox=seed_bbox,
                 tail_enabled=True,
                 tail_steps=6,
             )
@@ -378,6 +380,9 @@ def main():
                 args.deposition_figure,
                 figure_dpi=fig_dpi,
                 map_extent=map_extent,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                seed_bbox=seed_bbox,
             )
             if saved_dep:
                 print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
@@ -397,24 +402,26 @@ def main():
                 figure_dpi=fig_dpi,
                 map_extent=map_extent,
                 cmap_name="rainbow",
+                source_lat=source_lat,
+                source_lon=source_lon,
+                seed_bbox=seed_bbox,
             )
 
         if args.age_figure:
-            ages = np.maximum((traj_times[-1] - traj_times[0]) / np.timedelta64(1, "h"), 0.0)
-            plot_mpas_parcel_trajectories(
+            plot_mpas_trajectories_by_age(
                 traj_lon,
                 traj_lat,
                 traj_active,
-                np.arange(traj_lon.shape[1]),
-                np.full(traj_lon.shape[1], float(ages)),
+                traj_z,
+                traj_times,
                 lat_deg,
                 lon_deg,
                 args.age_figure,
-                title="Aggregated trajectories colored by age",
-                colorbar_label="Age (hours)",
                 figure_dpi=fig_dpi,
                 map_extent=map_extent,
-                cmap_name="gist_ncar",
+                source_lat=source_lat,
+                source_lon=source_lon,
+                seed_bbox=seed_bbox,
             )
 
         if args.seeds_vertical_figure is not None:

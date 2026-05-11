@@ -10,8 +10,8 @@ from netCDF4 import Dataset
 from scipy.interpolate import griddata
 
 # Suppress common deprecation warnings from numpy and netCDF4
-warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*`np\.bool` is a deprecated alias.*")
-warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*tostring\(\) is deprecated.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*`np\.bool` is a deprecated alias.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*tostring\(\) is deprecated.*")
 
 
 def _diag(msg: str) -> None:

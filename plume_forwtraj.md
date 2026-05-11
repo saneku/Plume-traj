@@ -128,7 +128,7 @@ Full argument list:
   Aerosol type for gravitational settling (keys in `SETTLING_VEL_MS`).  
   If omitted, parcels are treated as passive tracers with no gravitational settling (WRF and MPAS).
 
-- `--height-figure` (default: `parcel_heights.png`)  
+- `--initial-height-figure` (default: `parcel_initial_heights.png`)  
   Output PNG for trajectories coloured by parcel height.
 
 - `--age-figure` (default: `parcel_ages.png`)  
@@ -206,7 +206,7 @@ python plume_forwtraj.py \
 
 The script writes:
 
-- A height-colored trajectory map (`--height-figure`)
+- A height-colored trajectory map (`--initial-height-figure`)
 - An age-colored trajectory map (`--age-figure`)
 - Optional deposited-parcel map colored by deposition hour (`--deposition-figure`)
 - Optional initial vertical distribution (`--seeds-vertical-figure`)
@@ -230,7 +230,7 @@ Optional overrides:
 
 ```bash
 python plot_forwtraj.py forward_run.pkl \
-  --height-figure plume_height_colored_replot.png \
+  --initial-height-figure plume_height_colored_replot.png \
   --age-figure plume_age_colored_replot.png \
   --deposition-figure deposited_parcels_by_hour_replot.png \
   --seeds-vertical-figure seeds_vertical_replot.png \
@@ -272,7 +272,7 @@ python plume_forwtraj.py \
   --z-min 1000 \
   --z-max 23000 \
   --n-vert 30 \
-  --height-figure plume_height_colored.png \
+  --initial-height-figure plume_height_colored.png \
   --age-figure plume_age_colored.png \
   --seeds-vertical-figure parcel_initial_vertical_distribution.png \
   --state-pickle forward_run.pkl

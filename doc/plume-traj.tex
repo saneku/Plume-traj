@@ -172,7 +172,7 @@ The script \texttt{plume\_backtraj.py} generates a series of quantitative and vi
 \clearpage
 
 \subsection{Output from the forward in time run}
-The script \texttt{plume\_forwtraj.py} is for forward runs and produces height- and age-colored trajectory maps (\path{--height-figure}, \path{--age-figure}), as shown in Fig. \ref{fig:fig3}.
+The script \texttt{plume\_forwtraj.py} is for forward runs and produces height- and age-colored trajectory maps (\path{--initial-height-figure}, \path{--age-figure}), as shown in Fig. \ref{fig:fig3}.
 It can also save hourly parcel-location snapshots (\path{--hourly-output-dir}) and a deposited-parcel map colored by deposition hour (\path{--deposition-figure}).
 For both WRF and MPAS forward runs, map diagnostics use consistent overlays: the source marker (red triangle, from \path{--source-lat}/\path{--source-lon}) and the seed area box (\path{--seed-bbox}, when provided). The same overlay behavior is preserved when re-plotting from \path{--state-pickle} with \texttt{plot\_forwtraj.py}.
 

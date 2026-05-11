@@ -32,7 +32,10 @@ from src.plume_wrf import (
     compute_height_edges,
 )
 from src.plume_mpas import (
+    plot_emission_matrix as plot_mpas_emission_matrix,
     plot_mpas_column_and_parcels,
+    plot_mpas_deposited_parcels_by_hour,
+    plot_mpas_missed_trajectories,
     plot_mpas_trajectories,
     plot_mpas_vertical_distribution,
 )
@@ -361,6 +364,7 @@ def main():
         return
 
     grid = state["grid"]
+    trajectories = state["trajectories"]
     script_args = state["args"]
     target = script_args.get("target", "wrf")
     dpi = script_args.get("figure_dpi", 100)
@@ -412,7 +416,7 @@ def main():
             map_extent=map_extent,
         )
 
-        if args.trajectory_age:
+        if arrival_age_hours.size:
             plot_mpas_trajectories(
                 column_1d,
                 lat_deg,
@@ -422,7 +426,7 @@ def main():
                 traj_active,
                 np.where(arrived_mask)[0],
                 arrival_age_hours[arrived_mask] if arrival_age_hours.size else np.array([]),
-                args.trajectory_age,
+                "aggregated_trajectory_ages.png",
                 threshold=script_args["threshold"],
                 receptor_lat=script_args["receptor_lat"],
                 receptor_lon=script_args["receptor_lon"],
@@ -434,7 +438,7 @@ def main():
                 map_extent=map_extent,
             )
 
-        if args.trajectory_emission_time_figure:
+        if arrival_time_sec.size:
             plot_mpas_trajectories(
                 column_1d,
                 lat_deg,
@@ -444,7 +448,7 @@ def main():
                 traj_active,
                 np.where(arrived_mask)[0],
                 arrival_time_sec[arrived_mask] / 3600.0 if arrival_time_sec.size else np.array([]),
-                args.trajectory_emission_time_figure,
+                "aggregated_trajectory_emission_time.png",
                 threshold=script_args["threshold"],
                 receptor_lat=script_args["receptor_lat"],
                 receptor_lon=script_args["receptor_lon"],
@@ -456,7 +460,7 @@ def main():
                 map_extent=map_extent,
             )
 
-        if args.trajectory_arrival_height_figure:
+        if arrival_z.size:
             plot_mpas_trajectories(
                 column_1d,
                 lat_deg,
@@ -466,7 +470,7 @@ def main():
                 traj_active,
                 np.where(arrived_mask)[0],
                 arrival_z[arrived_mask] / 1000.0 if arrival_z.size else np.array([]),
-                args.trajectory_arrival_height_figure,
+                "aggregated_trajectory_arrival_height.png",
                 threshold=script_args["threshold"],
                 receptor_lat=script_args["receptor_lat"],
                 receptor_lon=script_args["receptor_lon"],
@@ -478,8 +482,7 @@ def main():
                 map_extent=map_extent,
             )
 
-        if args.deposition_figure is not None:
-            plot_mpas_deposited_parcels_by_hour(
+        saved_dep = plot_mpas_deposited_parcels_by_hour(
                 lat_deg,
                 lon_deg,
                 traj_lon,
@@ -487,68 +490,81 @@ def main():
                 traj_z,
                 traj_active,
                 np.asarray(trajectories["times"]),
-                args.deposition_figure,
+                "aggregated_deposited_parcels_by_hour.png",
                 figure_dpi=dpi,
                 map_extent=map_extent,
-            )
+        )
+        if saved_dep:
+            print("[diag] Deposition-hour figure saved to 'aggregated_deposited_parcels_by_hour.png'.")
 
-        if args.output_figure and emission.get("matrix") is not None and emission.get("time_edges") is not None and emission.get("z_bins") is not None:
-            plot_emission_matrix(
-                emission=emission["matrix"],
-                time_edges=np.asarray(emission["time_edges"]),
-                z_bins=np.asarray(emission["z_bins"]),
-                out_path=args.output_figure,
-                figure_dpi=dpi,
-                colorbar_label="Parcel count",
-            )
-
-            plot_mpas_trajectories(
-                column_1d,
-                lat_deg,
-                lon_deg,
-                traj_lon,
-                traj_lat,
-                traj_active,
-                np.where(arrived_mask)[0],
-                init_heights if init_heights is not None else np.zeros(traj_lon.shape[1]),
-                "aggregated_trajectories.png",
-                threshold=script_args["threshold"],
-                receptor_lat=script_args["receptor_lat"],
-                receptor_lon=script_args["receptor_lon"],
-                receptor_radius_m=script_args["receptor_radius"],
-                seed_bbox=seed_bbox,
-                title="Aggregated parcel trajectories",
-                colorbar_label=state["column"]["colorbar_label"],
-                figure_dpi=dpi,
-                map_extent=map_extent,
-            )
+        plot_mpas_trajectories(
+            column_1d,
+            lat_deg,
+            lon_deg,
+            traj_lon,
+            traj_lat,
+            traj_active,
+            np.where(arrived_mask)[0],
+            init_heights if init_heights is not None else np.zeros(traj_lon.shape[1]),
+            "aggregated_trajectories.png",
+            threshold=script_args["threshold"],
+            receptor_lat=script_args["receptor_lat"],
+            receptor_lon=script_args["receptor_lon"],
+            receptor_radius_m=script_args["receptor_radius"],
+            seed_bbox=seed_bbox,
+            title="Aggregated parcel trajectories",
+            colorbar_label=state["column"]["colorbar_label"],
+            figure_dpi=dpi,
+            map_extent=map_extent,
+        )
 
         if init_heights is not None:
-            plot_mpas_trajectories(
+            plot_mpas_missed_trajectories(
                 column_1d,
                 lat_deg,
                 lon_deg,
                 traj_lon,
                 traj_lat,
                 traj_active,
-                np.where(~arrived_mask)[0],
-                init_heights[np.where(~arrived_mask)[0]],
+                arrived_mask,
+                init_heights,
                 "aggregated_missed_trajectories.png",
                 threshold=script_args["threshold"],
                 receptor_lat=script_args["receptor_lat"],
                 receptor_lon=script_args["receptor_lon"],
                 receptor_radius_m=script_args["receptor_radius"],
                 seed_bbox=seed_bbox,
-                title="Aggregated missed trajectories",
-                colorbar_label=state["column"]["colorbar_label"],
+                z_min=script_args.get("z_min"),
+                z_max=script_args.get("z_max"),
                 figure_dpi=dpi,
                 map_extent=map_extent,
             )
 
-        if args.seeds_vertical_figure is not None:
+        if emission.get("matrix") is not None and emission.get("time_edges") is not None and emission.get("z_bins") is not None:
+            plot_mpas_emission_matrix(
+                emission=np.asarray(emission["matrix"]),
+                time_edges=np.asarray(emission["time_edges"]),
+                z_edges_km=np.asarray(emission["z_bins"]),
+                out_path="aggregated_emission_matrix.png",
+                figure_dpi=dpi,
+                colorbar_label="Parcel count",
+                total_parcels=emission.get("total_parcels"),
+            )
+        if emission.get("mass_matrix") is not None and emission.get("time_edges") is not None and emission.get("z_bins") is not None:
+            plot_mpas_emission_matrix(
+                emission=np.asarray(emission["mass_matrix"]),
+                time_edges=np.asarray(emission["time_edges"]),
+                z_edges_km=np.asarray(emission["z_bins"]),
+                out_path="aggregated_mass_matrix.png",
+                figure_dpi=dpi,
+                colorbar_label="Parcel mass",
+                total_parcels=None,
+            )
+
+        if state.get("initial_parcels") is not None:
             plot_mpas_vertical_distribution(
                 parcels=state["initial_parcels"],
-                out_path=args.seeds_vertical_figure,
+                out_path="aggregated_parcel_vertical_distribution.png",
                 z_min=script_args.get("z_min"),
                 z_max=script_args.get("z_max"),
                 figure_dpi=dpi,
@@ -643,9 +659,6 @@ def main():
 
     emission_time_hours = state["trajectories"].get("emission_time_hours")
     emission_start_time = state.get("metadata", {}).get("emission_start")
-    if emission_start_time is None:
-        emission_start_time = np.datetime64("2025-11-23T08:30:00")
-        print(f"[diag] emission_start missing in metadata, using default: {emission_start_time}")
 
     if emission_time_hours is None:
         arrival_age_hours = state["trajectories"].get("arrival_age_hours")
@@ -659,16 +672,16 @@ def main():
         if start_time is not None:
             start_time = np.datetime64(start_time)
 
-        if arrival_age_hours is not None and start_time is not None:
+        if arrival_age_hours is not None and start_time is not None and emission_start_time is not None:
             start_time_sec = (
                 (start_time - emission_start_time) / np.timedelta64(1, "s")
             ).astype(float)
             emission_time_hours = start_time_sec / 3600.0 - np.asarray(arrival_age_hours, dtype=float)
             print("[diag] Derived emission-time data from arrival ages.")
         else:
-            print("[diag] No emission-time data available.")
+            print("[diag] No emission-time data available (missing emission_start and/or start_time).")
 
-    if emission_time_hours is not None:
+    if emission_time_hours is not None and emission_start_time is not None:
         print("[diag] Plotting aggregated emission time map...")
         plot_parcel_emission_time_map(
             column2d=column,
