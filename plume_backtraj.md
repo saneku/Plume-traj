@@ -168,13 +168,13 @@ Full argument list:
   Path to a PNG plot showing the initial vertical distribution of all seeded parcels.
 
 - `--trajectory-age` (optional)  
-  When set, writes a Cartopy map (PNG) where parcel trajectories are coloured by their arrival age (hours). The figure mirrors the main trajectory map, includes the same coastline/border background, and uses 10 discrete intervals from the `gist_ncar` colormap with a horizontal legend.
+  When set, writes a Cartopy map (PNG) where parcel trajectories are colored by their arrival age (hours). The figure mirrors the main trajectory map, includes the same coastline/border background, and uses 10 discrete intervals from the `gist_ncar` colormap with a horizontal legend.
 
 - `--trajectory-emission-time-figure` (optional)  
-  Writes a Cartopy map (PNG) where parcel trajectories are coloured by emission time (hours since `--emission-start`). Uses 10 discrete intervals from `gist_ncar` and labels the colorbar with the emission start time when provided.
+  Writes a Cartopy map (PNG) where parcel trajectories are colored by emission time (hours since `--emission-start`). Uses 10 discrete intervals from `gist_ncar` and labels the colorbar with the emission start time when provided.
 
 - `--trajectory-arrival-height-figure` (optional)  
-  Like the age map, but parcels are coloured by the altitude at which they intercepted the receptor cylinder (10 discrete bins, labelled in km).
+  Like the age map, but parcels are colored by the altitude at which they intercepted the receptor cylinder (10 discrete bins, labelled in km).
 
 - `--missed-trajectory-figure` (optional)  
   Stores a Cartopy map of the parcels that never intersected the receptor. Trajectories are plotted with the same initial-height colouring as the main trajectory panel, and final positions are marked with colored points.
@@ -337,9 +337,9 @@ Cells with no arrivals remain `0.0`. Diagnostic messages print both the total pa
 
 - **Initial parcel map** (`parcel_locations_tXXX.png`): shows the column field (scaled by `--column-coef`), the threshold contour (white dash-dot), receptor location/circle, and all initial parcels. The colorbar label for this and any other column-field plot comes from `--colorbar-label`.
 - **Hourly snapshots** (`--hourly-output-dir`): optional sequence of parcel maps rendered after each back-advection step (indices count backward so the numbering matches the WRF time index). This is enabled when `--hourly-output-dir` is provided.
-- **Trajectory figure** (`--trajectory-figure`): plots only those parcels that reached the receptor. Their paths and starting markers are coloured by launch height using 10 evenly spaced intervals between `--z-min` and `--z-max`, with a horizontal rainbow legend for the initial-height bins. Only the start points are highlighted (no terminal markers), emphasizing where each parcel originated. The rendering is heavily optimized using `matplotlib.collections.LineCollection` to draw all trajectories at once, making it efficient even for thousands of parcels.
-- **Parcel-age figure** (`--trajectory-age`, optional): second Cartopy panel where the same trajectories are coloured by their arrival age. Ten evenly spaced time bins drive a horizontal `gist_ncar` legend (labelled in hours), giving a quick view of how long each parcel needed to reach the receptor.
-- **Emission-time figure** (`--trajectory-emission-time-figure`, optional): Cartopy panel where trajectories are coloured by emission time (hours since `--emission-start`). The colorbar labels the emission reference time when supplied.
+- **Trajectory figure** (`--trajectory-figure`): plots only those parcels that reached the receptor. Their paths and starting markers are colored by launch height using 10 evenly spaced intervals between `--z-min` and `--z-max`, with a horizontal rainbow legend for the initial-height bins. Only the start points are highlighted (no terminal markers), emphasizing where each parcel originated. The rendering is heavily optimized using `matplotlib.collections.LineCollection` to draw all trajectories at once, making it efficient even for thousands of parcels.
+- **Parcel-age figure** (`--trajectory-age`, optional): second Cartopy panel where the same trajectories are colored by their arrival age. Ten evenly spaced time bins drive a horizontal `gist_ncar` legend (labelled in hours), giving a quick view of how long each parcel needed to reach the receptor.
+- **Emission-time figure** (`--trajectory-emission-time-figure`, optional): Cartopy panel where trajectories are colored by emission time (hours since `--emission-start`). The colorbar labels the emission reference time when supplied.
 - **Arrival-height figure** (`--trajectory-arrival-height-figure`, optional): similar map but colour-codes parcels by the height at which they hit the receptor cylinder, using 10 evenly spaced bins (km) and a horizontal legend.
 - **Emission matrix figure** (`--output-figure`): heatmap of parcel counts versus time and altitude with discrete bins, tick labels formatted as HH:MM when actual datetimes are available, and an annotation with the total number of parcels reaching the receptor.
 - **Mass-weighted outputs** (`--mass-output-txt`, `--mass-figure`, optional): mirror the count-based TXT/PNG products but display the accumulated parcel mass in each bin, preserving the same axes, tick formatting, and labels (the figure uses the “Parcel mass” colorbar title).

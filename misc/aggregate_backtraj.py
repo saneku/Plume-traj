@@ -12,8 +12,8 @@ Writes the shared aggregate figure names used by both backends where the
 diagnostic is the same.
 Example usage:
 
-python misc/aggregate_backtraj.py ./4km --map-extent 30 5 65 30
-python misc/aggregate_backtraj.py ./4km --pickle-name run_state.pkl --map-extent 30 5 65 30
+python misc/aggregate_backtraj.py . --pickle-name run_state.pkl --map-extent 30 5 65 30 \
+--hourly-output-dir ./aggregate_hourly
 
 '''
 
@@ -28,6 +28,7 @@ from src.plume_wrf import (
     plot_parcel_emission_time_map,
     plot_missed_parcel_trajectories,
     plot_emission_matrix,
+    plot_hourly_parcel_snapshots,
     _format_time_str,
     compute_height_edges,
 )
@@ -35,6 +36,7 @@ from src.plume_mpas import (
     plot_emission_matrix as plot_mpas_emission_matrix,
     plot_mpas_column_and_parcels,
     plot_mpas_deposited_parcels_by_hour,
+    plot_mpas_hourly_snapshots,
     plot_mpas_missed_trajectories,
     plot_mpas_trajectories,
     plot_mpas_vertical_distribution,
@@ -61,6 +63,14 @@ def parse_args():
         help=(
             "Optional pickle filename inside each ash*_run directory. "
             "If omitted, tries run_ash.pkl, then run_state.pkl."
+        ),
+    )
+    parser.add_argument(
+        "--hourly-output-dir",
+        default=None,
+        help=(
+            "If set, re-generate hourly parcel snapshot plots from the "
+            "aggregated state into this output directory."
         ),
     )
     return parser.parse_args()
@@ -105,6 +115,10 @@ def load_and_aggregate(ash_dirs, pickle_name=None):
                 traj["initial_height_m"] = np.asarray(traj["initial_height_m"])
             if "final_z" in traj:
                 traj["final_z"] = np.asarray(traj["final_z"])
+            if "height_hist_m" in traj and traj["height_hist_m"] is not None:
+                traj["height_hist_m"] = np.asarray(traj["height_hist_m"])
+            if "k" in traj and traj["k"] is not None:
+                traj["k"] = np.asarray(traj["k"])
 
             if "initial_parcels" in aggregated_state and aggregated_state["initial_parcels"]:
                 ip = aggregated_state["initial_parcels"]
@@ -135,6 +149,10 @@ def load_and_aggregate(ash_dirs, pickle_name=None):
                 traj["i"] = pad_t(traj["i"], t_max, np.nan)
                 traj["j"] = pad_t(traj["j"], t_max, np.nan)
                 traj["active"] = pad_t(traj["active"], t_max, False)
+                if "height_hist_m" in traj and traj["height_hist_m"] is not None:
+                    traj["height_hist_m"] = pad_t(np.asarray(traj["height_hist_m"]), t_max, np.nan)
+                if "k" in traj and traj["k"] is not None:
+                    traj["k"] = pad_t(np.asarray(traj["k"]), t_max, np.nan)
                 if "times" in new_traj and len(new_traj["times"]) == t_max:
                     traj["times"] = new_traj["times"]
             
@@ -142,12 +160,61 @@ def load_and_aggregate(ash_dirs, pickle_name=None):
                 new_traj["i"] = pad_t(new_traj["i"], t_max, np.nan)
                 new_traj["j"] = pad_t(new_traj["j"], t_max, np.nan)
                 new_traj["active"] = pad_t(new_traj["active"], t_max, False)
+                if "height_hist_m" in new_traj and new_traj["height_hist_m"] is not None:
+                    new_traj["height_hist_m"] = pad_t(np.asarray(new_traj["height_hist_m"]), t_max, np.nan)
+                if "k" in new_traj and new_traj["k"] is not None:
+                    new_traj["k"] = pad_t(np.asarray(new_traj["k"]), t_max, np.nan)
         
         # Concatenate arrays along axis 1 (parcels) or axis 0 (1D arrays)
         traj["i"] = np.concatenate([traj["i"], new_traj["i"]], axis=1)
         traj["j"] = np.concatenate([traj["j"], new_traj["j"]], axis=1)
         traj["active"] = np.concatenate([traj["active"], new_traj["active"]], axis=1)
         traj["arrived_mask"] = np.concatenate([traj["arrived_mask"], new_traj["arrived_mask"]])
+
+        def _agg_time_parcel(key, fill):
+            val_curr = traj.get(key)
+            val_new = new_traj.get(key)
+
+            if val_curr is None and val_new is None:
+                return
+
+            if val_curr is None:
+                val_new = np.asarray(val_new)
+                if val_new.ndim != 2:
+                    return
+                if total_parcels_offset > 0:
+                    pad_curr = np.full((val_new.shape[0], total_parcels_offset), fill)
+                    traj[key] = np.concatenate([pad_curr, val_new], axis=1)
+                else:
+                    traj[key] = val_new
+                return
+
+            val_curr = np.asarray(val_curr)
+            if val_curr.ndim != 2:
+                return
+
+            if val_new is None:
+                n_new = new_traj["i"].shape[1]
+                pad_new = np.full((val_curr.shape[0], n_new), fill)
+                traj[key] = np.concatenate([val_curr, pad_new], axis=1)
+                return
+
+            val_new = np.asarray(val_new)
+            if val_new.ndim != 2:
+                return
+            if val_curr.shape[0] != val_new.shape[0]:
+                t_max = max(val_curr.shape[0], val_new.shape[0])
+                def _pad_local(arr):
+                    if arr.shape[0] >= t_max:
+                        return arr
+                    pad_w = [(0, t_max - arr.shape[0]), (0, 0)]
+                    return np.pad(arr, pad_w, mode='constant', constant_values=fill)
+                val_curr = _pad_local(val_curr)
+                val_new = _pad_local(val_new)
+            traj[key] = np.concatenate([val_curr, val_new], axis=1)
+
+        _agg_time_parcel("height_hist_m", np.nan)
+        _agg_time_parcel("k", np.nan)
         
         def _agg_dense(key):
             val_new = new_traj.get(key)
@@ -569,6 +636,27 @@ def main():
                 z_max=script_args.get("z_max"),
                 figure_dpi=dpi,
             )
+        if args.hourly_output_dir:
+            n_hourly = plot_mpas_hourly_snapshots(
+                lat_deg,
+                lon_deg,
+                traj_lon,
+                traj_lat,
+                trajectories["active"],
+                trajectories["z"],
+                trajectories["times"],
+                trajectories["time_indices"],
+                args.hourly_output_dir,
+                figure_dpi=dpi,
+                map_extent=map_extent,
+                source_lat=script_args.get("source_lat"),
+                source_lon=script_args.get("source_lon"),
+                seed_bbox=seed_bbox,
+            )
+            print(
+                "[diag] Hourly snapshots re-plotted: "
+                f"{n_hourly} file(s) in '{args.hourly_output_dir}'."
+            )
         return
 
     column = state["column"]["field"]
@@ -807,6 +895,67 @@ def main():
                 )
                 f.write(row_vals + "\n")
         print("Aggregated Mass-weighted emission series written to 'aggregated_mass_matrix.txt'.")
+
+    if args.hourly_output_dir:
+        traj_times_utc = None
+        traj = state["trajectories"]
+        traj_times = np.asarray(traj["times"])
+        if np.issubdtype(traj_times.dtype, np.datetime64):
+            traj_times_utc = traj_times.astype("datetime64[s]")
+        else:
+            start_time = state.get("metadata", {}).get("start_time")
+            if start_time is not None:
+                try:
+                    start_utc = np.datetime64(start_time).astype("datetime64[s]")
+                    traj_seconds = np.rint(np.asarray(traj["times"], dtype=float)).astype(
+                        np.int64
+                    )
+                    rel_seconds = traj_seconds - int(traj_seconds[0])
+                    traj_times_utc = start_utc + rel_seconds.astype("timedelta64[s]")
+                except Exception:
+                    traj_times_utc = None
+
+        hourly_height_hist = traj.get("height_hist_m")
+        if hourly_height_hist is None:
+            init_h = traj.get("initial_height_m")
+            if init_h is not None:
+                init_h = np.asarray(init_h, dtype=float)
+                if init_h.ndim == 1 and init_h.size == traj["i"].shape[1]:
+                    hourly_height_hist = np.repeat(
+                        init_h[np.newaxis, :],
+                        traj["i"].shape[0],
+                        axis=0,
+                    )
+                    print(
+                        "[diag] Hourly replot fallback: using initial parcel heights "
+                        "for snapshot coloring (height history not found in pickle)."
+                    )
+
+        n_hourly = plot_hourly_parcel_snapshots(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=traj["i"],
+            trajectory_j=traj["j"],
+            trajectory_active=traj["active"],
+            trajectory_k=traj.get("k"),
+            trajectory_times_sec=traj["times"],
+            out_dir=args.hourly_output_dir,
+            height_hist_m=hourly_height_hist,
+            figure_dpi=dpi,
+            seed_bbox=seed_bbox,
+            source_lat=script_args.get("source_lat"),
+            source_lon=script_args.get("source_lon"),
+            receptor_lat=script_args.get("receptor_lat"),
+            receptor_lon=script_args.get("receptor_lon"),
+            receptor_radius_m=script_args.get("receptor_radius"),
+            map_extent=map_extent,
+            trajectory_times_utc=traj_times_utc,
+            show_elapsed_hour_in_title=False,
+        )
+        print(
+            "[diag] Hourly snapshots re-plotted: "
+            f"{n_hourly} file(s) in '{args.hourly_output_dir}'."
+        )
 
 if __name__ == "__main__":
     main()

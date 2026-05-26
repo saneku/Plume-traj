@@ -129,13 +129,13 @@ Full argument list:
   If omitted, parcels are treated as passive tracers with no gravitational settling (WRF and MPAS).
 
 - `--initial-height-figure` (default: `parcel_initial_heights.png`)  
-  Output PNG for trajectories coloured by parcel height.
+  Output PNG for trajectories colored by parcel height.
 
 - `--age-figure` (default: `parcel_ages.png`)  
-  Output PNG for trajectories coloured by parcel age since release.
+  Output PNG for trajectories colored by parcel age since release.
 
 - `--deposition-figure` (optional)  
-  Output PNG for deposited parcels only, coloured by deposition hour since release.
+  Output PNG for deposited parcels only, colored by deposition hour since release.
 
 - `--seeds-vertical-figure` (optional)  
   Output PNG for the initial vertical parcel distribution.

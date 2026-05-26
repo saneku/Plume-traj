@@ -8,7 +8,14 @@ python plot_backtraj.py so2_wrf_run/run_so2.pkl \
     --hourly-output-dir hourly_replot \
     --map-extent 30 5 65 30 \
     --figure-dpi 300
-    
+   
+   
+
+python plot_backtraj.py ash10_run/run_state.pkl \
+    --hourly-output-dir hourly_replot \
+    --map-extent 30 5 65 30 \
+    --figure-dpi 300
+ 
 """
 
 import pickle

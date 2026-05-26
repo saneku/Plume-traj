@@ -301,6 +301,21 @@ def main(args=None):
         traj_times = np.asarray(traj["times"])
         if np.issubdtype(traj_times.dtype, np.datetime64):
             traj_times_utc = traj_times.astype("datetime64[s]")
+        hourly_height_hist = traj.get("height_hist_m")
+        if hourly_height_hist is None:
+            init_h = traj.get("initial_height_m")
+            if init_h is not None:
+                init_h = np.asarray(init_h, dtype=float)
+                if init_h.ndim == 1 and init_h.size == traj["i"].shape[1]:
+                    hourly_height_hist = np.repeat(
+                        init_h[np.newaxis, :],
+                        traj["i"].shape[0],
+                        axis=0,
+                    )
+                    print(
+                        "[diag] Hourly replot fallback: using initial parcel heights "
+                        "for snapshot coloring (height history not found in pickle)."
+                    )
         n_hourly = plot_hourly_parcel_snapshots(
             xlat=xlat,
             xlon=xlon,
@@ -310,11 +325,14 @@ def main(args=None):
             trajectory_k=traj.get("k"),
             trajectory_times_sec=traj["times"],
             out_dir=args.hourly_output_dir,
-            height_hist_m=traj.get("height_hist_m"),
+            height_hist_m=hourly_height_hist,
             figure_dpi=dpi,
             seed_bbox=seed_bbox,
             source_lat=script_args.get("source_lat"),
             source_lon=script_args.get("source_lon"),
+            receptor_lat=script_args.get("receptor_lat"),
+            receptor_lon=script_args.get("receptor_lon"),
+            receptor_radius_m=script_args.get("receptor_radius"),
             map_extent=map_extent,
             trajectory_times_utc=traj_times_utc,
         )

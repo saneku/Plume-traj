@@ -56,6 +56,46 @@ def _ensure_parent_dir(path) -> None:
     Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
+def _bump_colorbar_fonts(cb, delta_pt=4.0):
+    """Increase colorbar tick and label font sizes by a fixed point delta."""
+    if cb is None:
+        return
+    for txt in cb.ax.get_xticklabels() + cb.ax.get_yticklabels():
+        try:
+            txt.set_fontsize(float(txt.get_fontsize()) + float(delta_pt))
+        except Exception:
+            continue
+    for label in (cb.ax.xaxis.label, cb.ax.yaxis.label):
+        try:
+            label.set_fontsize(float(label.get_fontsize()) + float(delta_pt))
+        except Exception:
+            continue
+
+
+def _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m):
+    """Draw receptor cylinder outline consistently across all trajectory figures."""
+    if (
+        receptor_lat is None
+        or receptor_lon is None
+        or receptor_radius_m is None
+        or receptor_radius_m <= 0
+    ):
+        return
+    ang = np.linspace(0, 2 * np.pi, 181)
+    lat_scale = 111320.0
+    lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
+    lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
+    lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
+    ax.plot(
+        lon_circle,
+        lat_circle,
+        color="red",
+        linewidth=2.0,
+        transform=ccrs.PlateCarree(),
+        zorder=9,
+    )
+
+
 def _build_emission_release_vectors(schedule):
     """Expand [height,time] count matrix into flat release vectors."""
     release_times = []
@@ -1057,7 +1097,15 @@ def plot_parcel_locations(
         lat_pad,
         map_extent=map_extent,
     )
-    mesh = ax.pcolormesh(xlon, xlat, column2d, shading="auto", cmap="plasma", transform=ccrs.PlateCarree())
+    mesh = ax.pcolormesh(
+        xlon,
+        xlat,
+        column2d,
+        shading="auto",
+        cmap="plasma",
+        transform=ccrs.PlateCarree(),
+        zorder=4.5,
+    )
 
     if threshold is not None:
         ax.contour(
@@ -1070,18 +1118,7 @@ def plot_parcel_locations(
             linestyles="-.",
             transform=ccrs.PlateCarree(),
         )
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
     if lat_p.size:
         ax.scatter(
             lon_p,
@@ -1096,8 +1133,9 @@ def plot_parcel_locations(
         )
 
     # Add a horizontal colorbar at the bottom
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
     cbar = plt.colorbar(mesh, cax=cax, label=colorbar_label, orientation="horizontal")
+    _bump_colorbar_fonts(cbar)
 
     # cbar = plt.colorbar(mesh, ax=ax, label=colorbar_label, orientation="vertical", pad=0.1, shrink=0.8)
     if title:
@@ -1172,6 +1210,7 @@ def plot_seed_vertical_distribution(
         cbar.set_ticks(ticks)
         cbar.set_ticklabels([f"{val/1000.0:.1f}" for val in ticks])
         ax.set_ylim(z_min / 1000.0, z_max / 1000.0)
+    _bump_colorbar_fonts(cbar)
 
     #fig.tight_layout()
     fig.savefig(out_path, dpi=figure_dpi)
@@ -1315,6 +1354,7 @@ def plot_emission_matrix(
         ticks=tick_vals,
         spacing="proportional",
     )
+    _bump_colorbar_fonts(cbar)
 
     #fig.tight_layout()
     fig.savefig(out_path, dpi=figure_dpi)
@@ -1476,18 +1516,7 @@ def plot_parcel_trajectories(
             alpha=PARCEL_MARKER_ALPHA,
         )
 
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -1504,7 +1533,7 @@ def plot_parcel_trajectories(
         norm = BoundaryNorm(color_bins, cmap_colors.N)
         sm = plt.cm.ScalarMappable(cmap=cmap_colors, norm=norm)
         sm.set_array([])
-        cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+        cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
         tick_centers = color_bins[:-1] + 0.5 * np.diff(color_bins)
         cb = plt.colorbar(
             sm,
@@ -1515,6 +1544,7 @@ def plot_parcel_trajectories(
         )
         cb.set_ticklabels([f"{val/1000:.1f}" for val in tick_centers])
         cb.set_label("Initial Height in Plume (km)")
+        _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1539,7 +1569,7 @@ def plot_parcel_age_map(
     seed_bbox=None,
     map_extent=None,
 ):
-    """Plot parcel trajectories coloured by arrival age."""
+    """Plot parcel trajectories colored by arrival age."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     ages = np.asarray(parcel_ages_hours, dtype=float)
     valid = np.isfinite(ages)
@@ -1653,18 +1683,7 @@ def plot_parcel_age_map(
         alpha=PARCEL_MARKER_ALPHA,
     )
 
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic())
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -1675,9 +1694,9 @@ def plot_parcel_age_map(
     title_suffix = ""
     if np.isfinite(min_age) and np.isfinite(max_age):
         title_suffix = f" (min={min_age:.2f} h, max={max_age:.2f} h)"
-    ax.set_title("Parcel trajectories coloured by arrival age" + title_suffix)
+    ax.set_title("Parcel trajectories colored by arrival age" + title_suffix)
 
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
     age_centers = age_bins[:-1] + 0.5 * np.diff(age_bins)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(age_bins, cmap.N))
     sm.set_array([])
@@ -1688,8 +1707,9 @@ def plot_parcel_age_map(
         boundaries=age_bins,
         ticks=age_centers,
     )
-    cb.set_ticklabels([f"{val:.1f} h" for val in age_centers])
+    cb.set_ticklabels([f"{val:.1f}" for val in age_centers])
     cb.set_label("Parcel age (hours)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1716,7 +1736,7 @@ def plot_parcel_emission_time_map(
     seed_bbox=None,
     map_extent=None,
 ):
-    """Plot parcel trajectories coloured by emission time (hours since emission start)."""
+    """Plot parcel trajectories colored by emission time (hours since emission start)."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     emission_hours = np.asarray(parcel_emission_time_hours, dtype=float)
     valid = np.isfinite(emission_hours)
@@ -1838,24 +1858,7 @@ def plot_parcel_emission_time_map(
         alpha=PARCEL_MARKER_ALPHA,
     )
 
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(
-            lon_circle,
-            lat_circle,
-            color="red",
-            linewidth=2.0,
-            transform=ccrs.Geodetic(),
-        )
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -1866,9 +1869,9 @@ def plot_parcel_emission_time_map(
     title_suffix = ""
     if np.isfinite(min_t) and np.isfinite(max_t):
         title_suffix = f" (min={min_t:.2f} h, max={max_t:.2f} h)"
-    ax.set_title("Parcel trajectories coloured by emission time" + title_suffix)
+    ax.set_title("Parcel trajectories colored by emission time" + title_suffix)
 
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
     time_centers = time_bins[:-1] + 0.5 * np.diff(time_bins)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(time_bins, cmap.N))
     sm.set_array([])
@@ -1879,13 +1882,14 @@ def plot_parcel_emission_time_map(
         boundaries=time_bins,
         ticks=time_centers,
     )
-    cb.set_ticklabels([f"{val:.1f} h" for val in time_centers])
+    cb.set_ticklabels([f"{val:.1f}" for val in time_centers])
     if emission_start_time is not None:
         cb.set_label(
             f"Hours since emission start ({np.datetime_as_string(emission_start_time, unit='m')})"
         )
     else:
         cb.set_label("Emission time since reference (hours)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1913,7 +1917,7 @@ def plot_parcel_arrival_height_map(
     seed_bbox=None,
     map_extent=None,
 ):
-    """Plot parcel trajectories coloured by their arrival heights."""
+    """Plot parcel trajectories colored by their arrival heights."""
     parcel_indices = np.asarray(parcel_indices, dtype=int)
     heights_m = np.asarray(parcel_arrival_height_m, dtype=float)
     heights_km = heights_m / 1000.0
@@ -2021,24 +2025,7 @@ def plot_parcel_arrival_height_map(
             transform=ccrs.PlateCarree(),
         )
 
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(
-            lon_circle,
-            lat_circle,
-            color="red",
-            linewidth=2.0,
-            transform=ccrs.PlateCarree(),
-        )
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -2092,11 +2079,11 @@ def plot_parcel_arrival_height_map(
     min_km = float(np.nanmin(heights_subset_km)) if heights_subset_km.size else float("nan")
     max_km = float(np.nanmax(heights_subset_km)) if heights_subset_km.size else float("nan")
     ax.set_title(
-        f"Parcel trajectories coloured by arrival height "
+        f"Parcel trajectories colored by arrival height "
         f"(min={min_km:.2f} km, max={max_km:.2f} km)"
     )
 
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
     h_bins_km = h_bins_m / 1000.0
     height_centers = h_bins_km[:-1] + 0.5 * np.diff(h_bins_km)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=BoundaryNorm(h_bins_km, cmap.N))
@@ -2110,6 +2097,7 @@ def plot_parcel_arrival_height_map(
     )
     cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
     cb.set_label("Arrival height (km)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -2267,18 +2255,7 @@ def plot_missed_parcel_trajectories(
                label="Final Position (colored by initial height)")
 
     # --- Receptor Visualization ---
-    if (
-        receptor_lat is not None
-        and receptor_lon is not None
-        and receptor_radius_m is not None
-        and receptor_radius_m > 0
-    ):
-        ang = np.linspace(0, 2 * np.pi, 181)
-        lat_scale = 111320.0
-        lon_scale = np.maximum(np.cos(np.deg2rad(receptor_lat)) * 111320.0, 1e-6)
-        lat_circle = receptor_lat + (receptor_radius_m / lat_scale) * np.sin(ang)
-        lon_circle = receptor_lon + (receptor_radius_m / lon_scale) * np.cos(ang)
-        ax.plot(lon_circle, lat_circle, color="red", linewidth=2.0, transform=ccrs.Geodetic(), zorder=8)
+    _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
     _plot_seed_bbox(ax, seed_bbox)
 
@@ -2296,11 +2273,12 @@ def plot_missed_parcel_trajectories(
     # Create a single colorbar for altitude (km), horizontal like main plot
     sm = plt.cm.ScalarMappable(cmap=listed_cmap, norm=norm)
     sm.set_array([])
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+    cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
     tick_centers = color_bins[:-1] + 0.5 * np.diff(color_bins)
     cb = plt.colorbar(sm, cax=cax, orientation="horizontal", boundaries=color_bins, ticks=tick_centers)
     cb.set_ticklabels([f"{val/1000:.1f}" for val in tick_centers])
     cb.set_label("Initial Height in Plume (km)")
+    _bump_colorbar_fonts(cb)
 
     # The legend is now implicit through the markers and colorbar
     # from matplotlib.lines import Line2D
@@ -2511,12 +2489,12 @@ def parse_backtraj_args():
     parser.add_argument(
         "--trajectory-emission-time-figure",
         default=None,
-        help="Optional PNG file for parcel trajectories coloured by emission time.",
+        help="Optional PNG file for parcel trajectories colored by emission time.",
     )
     parser.add_argument(
         "--trajectory-arrival-height-figure",
         default=None,
-        help="Optional PNG file for parcel trajectories coloured by arrival height.",
+        help="Optional PNG file for parcel trajectories colored by arrival height.",
     )
     parser.add_argument(
         "--missed-trajectory-figure",
@@ -2794,6 +2772,8 @@ def run_backtraj(args):
 
     snapshot_config = None
     if args.hourly_output_dir:
+            snapshot_out_dir = Path(args.hourly_output_dir)
+            snapshot_out_dir.mkdir(parents=True, exist_ok=True)
             snapshot_config = dict(
                 column2d=column2d,
                 xlat=xlat,
@@ -2805,7 +2785,7 @@ def run_backtraj(args):
                 seed_bbox=seed_bbox,
                 map_extent=map_extent,
                 colorbar_label=args.colorbar_label,
-                output_dir=Path("."),
+                output_dir=snapshot_out_dir,
                 prefix="parcel_positions_hour_",
                 total_steps=it_start,
             )
@@ -4190,7 +4170,7 @@ def plot_trajectories_by_height(
     min_km = float(np.nanmin(init_heights_m[finite_init])) / 1000.0
     max_km = float(np.nanmax(init_heights_m[finite_init])) / 1000.0
     ax.set_title(
-        "Parcel trajectories coloured by initial height "
+        "Parcel trajectories colored by initial height "
         f"(min={min_km:.2f} km, max={max_km:.2f} km)"
     )
 
@@ -4208,6 +4188,7 @@ def plot_trajectories_by_height(
     )
     cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
     cb.set_label("Initial height (km)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -4314,7 +4295,7 @@ def plot_trajectories_by_age(
 
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title("Parcel trajectories coloured by age since release")
+    ax.set_title("Parcel trajectories colored by age since release")
 
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     age_centers = age_bins[:-1] + 0.5 * np.diff(age_bins)
@@ -4329,6 +4310,7 @@ def plot_trajectories_by_age(
     )
     cb.set_ticklabels([f"{val:.1f} h" for val in age_centers])
     cb.set_label("Parcel age (hours)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -4429,7 +4411,7 @@ def plot_deposited_parcels_by_hour(
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_title(
-        "Deposited parcels coloured by deposition hour "
+        "Deposited parcels colored by deposition hour "
         f"(n={lon_dep.size}, min={hmin:.1f} h, max={hmax:.1f} h)"
     )
 
@@ -4446,6 +4428,7 @@ def plot_deposited_parcels_by_hour(
     )
     cb.set_ticklabels([f"{val:.1f}" for val in hour_centers])
     cb.set_label("Deposition hour since release (h)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -4466,10 +4449,14 @@ def plot_hourly_parcel_snapshots(
     seed_bbox=None,
     source_lat=None,
     source_lon=None,
+    receptor_lat=None,
+    receptor_lon=None,
+    receptor_radius_m=None,
     map_extent=None,
     trajectory_times_utc=None,
     tail_enabled=False,
     tail_steps=6,
+    show_elapsed_hour_in_title=True,
 ):
     """Save parcel-location maps at each whole hour since release."""
     traj_i = np.asarray(trajectory_i, dtype=float)
@@ -4698,6 +4685,7 @@ def plot_hourly_parcel_snapshots(
                 zorder=7,
                 transform=ccrs.PlateCarree(),
             )
+        _plot_receptor_cylinder(ax, receptor_lat, receptor_lon, receptor_radius_m)
 
         _plot_seed_bbox(ax, seed_bbox)
         ax.set_xlabel("")
@@ -4708,16 +4696,25 @@ def plot_hourly_parcel_snapshots(
                 utc_label = str(snapshot_utc.astype("datetime64[s]"))
             else:
                 utc_label = str(snapshot_utc)
-            ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
+            if show_elapsed_hour_in_title:
+                ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
+            else:
+                ax.set_title(f"Parcel positions (UTC: {utc_label})")
         else:
             age_actual = float(elapsed_hours[snap_idx])
-            ax.set_title(
-                f"Parcel positions at +{hour:02d} h "
-                f"(nearest snapshot: +{age_actual:.2f} h)"
-            )
+            if show_elapsed_hour_in_title:
+                ax.set_title(
+                    f"Parcel positions at +{hour:02d} h "
+                    f"(nearest snapshot: +{age_actual:.2f} h)"
+                )
+            else:
+                ax.set_title(
+                    "Parcel positions "
+                    f"(nearest snapshot: +{age_actual:.2f} h)"
+                )
 
         if heights_km is not None:
-            cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+            cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
             sm = plt.cm.ScalarMappable(cmap=cmap_height, norm=norm_height)
             sm.set_array([])
             cb = plt.colorbar(
@@ -4729,6 +4726,7 @@ def plot_hourly_parcel_snapshots(
             )
             cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
             cb.set_label("Height (km)")
+            _bump_colorbar_fonts(cb)
 
         out_path = out_dir / f"parcel_positions_hour.{hour:04d}.png"
         fig.savefig(out_path, dpi=figure_dpi)

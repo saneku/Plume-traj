@@ -9,6 +9,7 @@ COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 
 outdir="./so2_wrf_run"
 mkdir -p "$outdir"
+mkdir -p "$outdir/hourly"
 python plume_backtraj.py \
   --target wrf \
   --input "$INPUT" \
@@ -17,7 +18,7 @@ python plume_backtraj.py \
   --efolding-days 35 \
   --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU' \
   --n-columns 100 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
-  --emission-start '2025-11-24T06:00:00' --emission-end '2025-11-24T09:00:00' \
+  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
   --receptor-lat 13.51 --receptor-lon 40.71 \
   --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
   --arrival-bin-minutes 30 \
@@ -44,6 +45,7 @@ COLUMN_VAR='sulfurdioxide_total_vertical_column_15km'
 
 outdir="./so2_mpas_run"
 mkdir -p "$outdir"
+mkdir -p "$outdir/hourly"
 python plume_backtraj.py \
   --target mpas \
   --input "$HIST" \
@@ -52,7 +54,7 @@ python plume_backtraj.py \
   --efolding-days 35 \
   --column-var "$COLUMN_VAR" --column-coef 2242.95 --threshold 0.1 --colorbar-label 'SO2, DU' \
   --n-columns 100 --n-vert 30 --parcel-radius 10000 --z-min 1000 --z-max 23000 \
-  --emission-start '2025-11-24T06:00:00' --emission-end '2025-11-24T09:00:00' \
+  --emission-start '2025-11-23T08:30:00' --emission-end '2025-11-24T10:00:00' \
   --receptor-lat 13.51 --receptor-lon 40.71 \
   --receptor-radius 20000 --receptor-min-h 1000 --receptor-max-h 30000 \
   --arrival-bin-minutes 30 \
@@ -83,6 +85,7 @@ COLUMN_VAR='aerosol_index_354_388'
 for aer in sulf ash10 ash9 ash8 ash7 ash6; do
   outdir="./${aer}_run"
   mkdir -p "$outdir"
+  mkdir -p "$outdir/hourly"
   python plume_backtraj.py \
     --target wrf \
     --input "$INPUT" \
@@ -106,6 +109,7 @@ for aer in sulf ash10 ash9 ash8 ash7 ash6; do
     --trajectory-arrival-height-figure "$outdir/trajectory_arrival_heights.png" \
     --missed-trajectory-figure "$outdir/missed_trajectories.png" \
     --figure-dpi 300 --state-pickle "$outdir/run_state.pkl" \
+    --hourly-output-dir "$outdir/hourly" \
     --map-extent 30 5 65 30
 done
 

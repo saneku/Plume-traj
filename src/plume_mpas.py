@@ -62,6 +62,22 @@ def _ensure_parent_dir(path):
     Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
+def _bump_colorbar_fonts(cb, delta_pt=4.0):
+    """Increase colorbar tick and label font sizes by a fixed point delta."""
+    if cb is None:
+        return
+    for txt in cb.ax.get_xticklabels() + cb.ax.get_yticklabels():
+        try:
+            txt.set_fontsize(float(txt.get_fontsize()) + float(delta_pt))
+        except Exception:
+            continue
+    for label in (cb.ax.xaxis.label, cb.ax.yaxis.label):
+        try:
+            label.set_fontsize(float(label.get_fontsize()) + float(delta_pt))
+        except Exception:
+            continue
+
+
 def _expand_input_paths(input_args):
     expanded = []
     for entry in input_args:
@@ -892,7 +908,8 @@ def plot_mpas_column_and_parcels(column, lat_deg, lon_deg, parcels, out_path, th
         )
     plot_seed_bbox(ax, seed_bbox)
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
-    plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
+    cb = plt.colorbar(mesh, cax=cax, orientation="horizontal", label=colorbar_label)
+    _bump_colorbar_fonts(cb)
     text_str = f"Total parcels initialized: {parcels['lon'].size}"
     if threshold is not None:
         text_str += f" within contour of {threshold:.2f} {colorbar_label}"
@@ -985,6 +1002,7 @@ def plot_mpas_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, traj_ac
         )
         cb.set_ticklabels([f"{val:.2f}" for val in tick_centers])
         cb.set_label(colorbar_label)
+        _bump_colorbar_fonts(cb)
     if title:
         ax.set_title(title)
     fig.savefig(out_path, dpi=figure_dpi)
@@ -1099,6 +1117,7 @@ def plot_mpas_missed_trajectories(column, lat_deg, lon_deg, traj_lon, traj_lat, 
     cb = plt.colorbar(sm, cax=cax, orientation="horizontal", boundaries=color_bins, ticks=tick_centers)
     cb.set_ticklabels([f"{val/1000.0:.1f}" for val in tick_centers])
     cb.set_label("Initial Height in Plume (km)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1201,6 +1220,7 @@ def plot_mpas_parcel_trajectories(traj_lon, traj_lat, traj_active, parcel_indice
     )
     cb.set_ticklabels([f"{val:.1f}" for val in tick_centers])
     cb.set_label(colorbar_label)
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1336,7 +1356,7 @@ def plot_mpas_trajectories_by_age(
 
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title("Parcel trajectories coloured by age since release")
+    ax.set_title("Parcel trajectories colored by age since release")
 
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
     age_centers = age_bins[:-1] + 0.5 * np.diff(age_bins)
@@ -1351,6 +1371,7 @@ def plot_mpas_trajectories_by_age(
     )
     cb.set_ticklabels([f"{val:.1f} h" for val in age_centers])
     cb.set_label("Parcel age (hours)")
+    _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
@@ -1390,6 +1411,7 @@ def plot_mpas_vertical_distribution(parcels, out_path, z_min, z_max, figure_dpi=
         cbar.set_ticklabels([f"{val/1000.0:.1f}" for val in ticks])
     if np.isfinite(z_min) and np.isfinite(z_max) and z_max > z_min:
         ax.set_ylim(z_min / 1000.0, z_max / 1000.0)
+    _bump_colorbar_fonts(cbar)
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
 
@@ -1562,7 +1584,7 @@ def plot_mpas_hourly_snapshots(
             ax.set_title(f"Parcel positions at +{hour:02d} h (UTC: {utc_label})")
         else:
             ax.set_title(f"Parcel positions at snapshot {time_idx}")
-        cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
+        cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
         cb = plt.colorbar(
@@ -1574,6 +1596,7 @@ def plot_mpas_hourly_snapshots(
         )
         cb.set_ticklabels([f"{val:.1f}" for val in height_centers])
         cb.set_label("Height (km)")
+        _bump_colorbar_fonts(cb)
         fig.savefig(out_dir / f"parcel_positions_hour.{snap_idx:04d}.png", dpi=figure_dpi)
         plt.close(fig)
         n_saved += 1
@@ -1663,7 +1686,7 @@ def plot_mpas_deposited_parcels_by_hour(
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_title(
-        "Deposited parcels coloured by deposition hour "
+        "Deposited parcels colored by deposition hour "
         f"(n={lon_dep.size}, min={hmin:.1f} h, max={hmax:.1f} h)"
     )
     cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
@@ -1673,6 +1696,7 @@ def plot_mpas_deposited_parcels_by_hour(
     cb = plt.colorbar(sm, cax=cax, orientation="horizontal", boundaries=h_bins, ticks=hour_centers)
     cb.set_ticklabels([f"{val:.1f}" for val in hour_centers])
     cb.set_label("Deposition hour since release (h)")
+    _bump_colorbar_fonts(cb)
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
     return True
@@ -1745,6 +1769,7 @@ def plot_emission_matrix(emission, time_edges, z_edges_km, out_path, figure_dpi=
         ticks=tick_vals,
         spacing="proportional",
     )
+    _bump_colorbar_fonts(cbar)
     fig.savefig(out_path, dpi=figure_dpi)
     plt.close(fig)
 
@@ -1918,7 +1943,7 @@ def run_backtraj(args):
         age_suffix = ""
         if age_subset.size:
             age_suffix = f" (min={float(np.nanmin(age_subset)):.2f} h, max={float(np.nanmax(age_subset)):.2f} h)"
-        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], age_subset, args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="Parcel trajectories coloured by arrival age" + age_suffix, colorbar_label="Arrival age (hours)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
+        plot_mpas_trajectories(column, lat, lon, result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.where(result["arrived"])[0], age_subset, args.trajectory_age, threshold=args.threshold, receptor_lat=args.receptor_lat, receptor_lon=args.receptor_lon, receptor_radius_m=args.receptor_radius, seed_bbox=seed_bbox, title="Parcel trajectories colored by arrival age" + age_suffix, colorbar_label="Arrival age (hours)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None)
         _diag(f"Parcel-age figure saved to '{args.trajectory_age}'.")
 
     if args.hourly_output_dir:
@@ -1979,7 +2004,7 @@ def run_backtraj(args):
             receptor_lon=args.receptor_lon,
             receptor_radius_m=args.receptor_radius,
             seed_bbox=seed_bbox,
-            title="Parcel trajectories coloured by emission time" + em_suffix,
+            title="Parcel trajectories colored by emission time" + em_suffix,
             colorbar_label="Emission time since reference (hours)",
             figure_dpi=args.figure_dpi,
             map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
@@ -2006,7 +2031,7 @@ def run_backtraj(args):
             receptor_lon=args.receptor_lon,
             receptor_radius_m=args.receptor_radius,
             seed_bbox=seed_bbox,
-            title="Parcel trajectories coloured by arrival height" + ah_suffix,
+            title="Parcel trajectories colored by arrival height" + ah_suffix,
             colorbar_label="Arrival height (km)",
             figure_dpi=args.figure_dpi,
             map_extent=tuple(args.map_extent) if args.map_extent is not None else None,
@@ -2402,7 +2427,7 @@ def run_forwtraj(args):
         init_min_km = float(np.nanmin(init_heights_km))
         init_max_km = float(np.nanmax(init_heights_km))
         title = (
-            "Parcel trajectories coloured by initial height "
+            "Parcel trajectories colored by initial height "
             f"(min={init_min_km:.2f} km, max={init_max_km:.2f} km)"
         )
         plot_mpas_parcel_trajectories(result["trajectory_lon"], result["trajectory_lat"], result["trajectory_active"], np.arange(result["trajectory_lon"].shape[1]), init_heights_km, lat, lon, args.initial_height_figure, title=title, colorbar_label="Initial height (km)", figure_dpi=args.figure_dpi, map_extent=tuple(args.map_extent) if args.map_extent is not None else None, cmap_name="rainbow", source_lat=args.source_lat, source_lon=args.source_lon, seed_bbox=seed_bbox)
