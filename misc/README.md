@@ -10,12 +10,22 @@ Aggregates multiple back-trajectory run pickles into one combined analysis.
 - Loads per-run `run_ash.pkl` state files from run directories.
 - Also accepts `run_state.pkl` by default; use `--pickle-name` to force a specific filename.
 - Concatenates trajectory arrays across runs.
+- Preserves per-snapshot height history when available, so hourly aggregated plots can color parcels by height.
 - Sums emission and mass-emission matrices.
 - Regenerates combined figures and TXT matrices (trajectories, parcel seeds, age, emission-time, arrival-height, missed trajectories, emission heatmaps).
+- Optionally regenerates aggregated hourly parcel-location maps (`--hourly-output-dir <dir>`). WRF hourly maps use corrected UTC titles and draw the receptor cylinder.
 - Supports both WRF and MPAS run pickles.
 
 Typical use:
 - Compare or merge several ash size-bin back-trajectory runs into one view.
+
+Example:
+```bash
+python misc/aggregate_backtraj.py . \
+  --pickle-name run_state.pkl \
+  --map-extent 30 5 65 30 \
+  --hourly-output-dir ./aggregate_hourly
+```
 
 ### `aggregate_forwtraj.py`
 Aggregates multiple forward-trajectory pickle outputs into one combined trajectory dataset.

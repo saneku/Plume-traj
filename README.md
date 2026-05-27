@@ -149,7 +149,7 @@ Emission-matrix notes:
 
 The `misc/` folder contains helper scripts and data:
 
-- `misc/aggregate_backtraj.py`: aggregate multiple back-trajectory pickle runs and replot combined diagnostics.
+- `misc/aggregate_backtraj.py`: aggregate multiple back-trajectory pickle runs and replot combined diagnostics, with optional hourly maps via `--hourly-output-dir`.
 - `misc/aggregate_forwtraj.py`: aggregate multiple forward-trajectory pickle runs and replot height/age maps.
 - `misc/regrid_to_wrf.py`: utilities for regridding cleaned fields onto a WRF grid.
 - `misc/regrid_to_mpas.py`: utilities for regridding cleaned fields onto an MPAS cell grid.
