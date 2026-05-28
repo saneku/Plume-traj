@@ -198,3 +198,120 @@ def emission_matrix_to_schedule(matrix, start_time_utc, z_override=None):
         mode=mode,
         height_unit_hint=unit_hint,
     )
+
+
+def parse_emission_timeseries_file(path):
+    """
+    Parse a time-intensity emission text file.
+
+    Expected format:
+      time_offset_h parcels
+      0 10
+      1 25
+      ...
+
+    The first column may be time_offset_h, time_offset_s, or time. The second
+    column is the total number of parcels released at that time.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 2:
+        raise ValueError("Emission timeseries file must contain a header and at least one data row.")
+
+    header = lines[0].split()
+    if len(header) != 2:
+        raise ValueError("Emission timeseries header must contain exactly two columns.")
+    time_key = header[0].lower()
+    count_key = header[1].lower()
+    if time_key not in ("time", "time_offset_s", "time_offset_h"):
+        raise ValueError(
+            "Emission timeseries first column must be 'time_offset_h', 'time_offset_s', or 'time'."
+        )
+    if count_key not in ("parcels", "count", "counts", "n", "n_parcels"):
+        raise ValueError("Emission timeseries second column must be parcel count/intensity.")
+
+    time_tokens = []
+    counts = []
+    for row_idx, line in enumerate(lines[1:], start=1):
+        fields = line.split()
+        if len(fields) != 2:
+            raise ValueError(f"Emission timeseries row {row_idx} must have exactly two columns.")
+        time_tokens.append(fields[0])
+        counts.append(float(fields[1]))
+
+    if time_key == "time_offset_h":
+        time_kind = "offset_s"
+        time_vals = np.array([float(tok) * 3600.0 for tok in time_tokens], dtype=float)
+    elif time_key == "time_offset_s":
+        time_kind = "offset_s"
+        time_vals = np.array([float(tok) for tok in time_tokens], dtype=float)
+    else:
+        time_kind = "datetime"
+        try:
+            time_vals = np.array([np.datetime64(tok) for tok in time_tokens], dtype="datetime64[s]")
+        except Exception:
+            time_kind = "numeric_legacy"
+            time_vals = np.array([float(tok) for tok in time_tokens], dtype=float)
+
+    return dict(
+        path=str(path),
+        raw_text=text,
+        time_tokens=time_tokens,
+        time_key=time_key,
+        time_kind=time_kind,
+        time_values=time_vals,
+        counts=np.asarray(counts, dtype=float),
+    )
+
+
+def emission_timeseries_to_schedule(timeseries, start_time_utc, z_min, z_max, n_vert):
+    """
+    Convert parsed time-intensity data into a [height,time] count schedule.
+
+    Each time row controls the total parcel count. Counts are distributed as
+    evenly as possible over uniformly spaced heights between z_min and z_max.
+    """
+    n_vert = int(n_vert)
+    if n_vert <= 0:
+        raise ValueError("n_vert must be positive in emission-timeseries mode.")
+    z_min = float(z_min)
+    z_max = float(z_max)
+    if not np.isfinite(z_min) or not np.isfinite(z_max) or z_max < z_min:
+        raise ValueError("z_min and z_max must be finite with z_max >= z_min.")
+
+    if n_vert == 1:
+        heights_m = np.array([0.5 * (z_min + z_max)], dtype=float)
+    else:
+        heights_m = np.linspace(z_min, z_max, n_vert, dtype=float)
+
+    tvals = timeseries["time_values"]
+    if timeseries["time_kind"] == "offset_s":
+        offsets_sec = np.asarray(tvals, dtype=float)
+    elif timeseries["time_kind"] == "datetime":
+        t0 = tvals[0].astype("datetime64[s]")
+        offsets_sec = ((tvals.astype("datetime64[s]") - t0) / np.timedelta64(1, "s")).astype(float)
+    else:
+        offsets_sec = np.asarray(tvals, dtype=float) - float(np.asarray(tvals, dtype=float)[0])
+
+    release_times = start_time_utc.astype("datetime64[s]") + np.rint(offsets_sec).astype(np.int64).astype("timedelta64[s]")
+    total_counts = np.rint(np.clip(timeseries["counts"], 0.0, None)).astype(int)
+    counts = np.zeros((heights_m.size, release_times.size), dtype=int)
+    for t_idx, total in enumerate(total_counts):
+        if total <= 0:
+            continue
+        base = total // heights_m.size
+        remainder = total % heights_m.size
+        counts[:, t_idx] = base
+        if remainder:
+            extra_idx = np.floor((np.arange(remainder) + 0.5) * heights_m.size / remainder).astype(int)
+            extra_idx = np.clip(extra_idx, 0, heights_m.size - 1)
+            counts[extra_idx, t_idx] += 1
+
+    return dict(
+        release_times_utc=release_times,
+        heights_m=heights_m,
+        counts=counts,
+        mode="timeseries_uniform",
+        height_unit_hint="m",
+        total_counts=total_counts,
+    )

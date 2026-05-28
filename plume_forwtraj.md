@@ -74,7 +74,7 @@ In MPAS mode, forward release supports:
 - a single nearest-cell source via `--source-lat` / `--source-lon`, or
 - random source columns inside `--seed-bbox` with `--n-columns` (non-emission-matrix mode).
 
-When `--emission-matrix` is used, MPAS forward still uses `--source-lat` / `--source-lon` as the source location.
+When `--emission-matrix` or `--emission-timeseries` is used, MPAS forward still uses `--source-lat` / `--source-lon` as the source location.
 
 ---
 
@@ -120,6 +120,9 @@ Full argument list:
 
 - `--emission-matrix` (optional)  
   Path to a time-height release matrix file. Recommended first line is `time_offset_h ...` (hours from `--start-time`) or `time_offset_s ...` (seconds from `--start-time`). Legacy `time ...` is also accepted.
+
+- `--emission-timeseries` (optional)  
+  Path to a time-intensity release file. Use this when time controls total released parcels and heights should be distributed uniformly from `--z-min` to `--z-max` over `--n-vert` levels. Cannot be used together with `--emission-matrix`.
 
 - `--integration-dt` (default: `15`)  
   Forward advection sub-step in seconds.
@@ -173,6 +176,45 @@ Matrix behavior:
   - matrix heights and counts are ignored
   - heights are rebuilt from `z-min..z-max` with `n-vert` levels
   - one parcel is released per `(time, height)` cell.
+
+### 3.2 Emission-Timeseries Format
+
+Use `--emission-timeseries` when you want a 1-D time-varying release intensity instead of a 2-D time-height matrix.
+
+Expected text layout:
+
+```text
+time_offset_h parcels
+0 10
+1 25
+2 40
+3 25
+```
+
+Behavior:
+
+- `time_offset_h` is hours from `--start-time`; `time_offset_s` is also accepted.
+- `parcels` is the total number of parcels released at that time.
+- `--z-min`, `--z-max`, and `--n-vert` are required.
+- The code builds `n-vert` uniformly spaced heights between `z-min` and `z-max`.
+- Each time row's total parcel count is distributed as evenly as possible across those heights.
+
+Example:
+
+```bash
+python plume_forwtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --z-min 100 \
+  --z-max 1500 \
+  --n-vert 15 \
+  --emission-timeseries emission_timeseries.txt \
+  --state-pickle forward_run.pkl
+```
 
 ---
 

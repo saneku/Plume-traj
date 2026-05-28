@@ -48,7 +48,8 @@ See the linked guides for full command-line options, inputs, and outputs. They i
 - Time arguments are expected in the same basis as WRF `Times` (normally UTC); no timezone conversion is applied by the scripts
 - Select the meteorology backend with `--target wrf` or `--target mpas`
 - Forward mode supports `--emission-matrix <txt>` for time-height release schedules
-- In forward mode without `--emission-matrix`, release can use `--source-lat/--source-lon` or random source columns from `--seed-bbox` with `--n-columns` (WRF and MPAS)
+- Forward mode supports `--emission-timeseries <txt>` for time-varying release intensity with uniform vertical distribution from `--z-min/--z-max/--n-vert`
+- In forward mode without `--emission-matrix` or `--emission-timeseries`, release can use `--source-lat/--source-lon` or random source columns from `--seed-bbox` with `--n-columns` (WRF and MPAS)
 - Forward `--aer-type` applies aerosol gravitational settling for both WRF and MPAS
 - Recommended matrix time headers are `time_offset_h` (hours from `--start-time`) or `time_offset_s` (seconds from `--start-time`); legacy `time` is still accepted
 - MPAS mode reads `history*.nc` files with `latCell`, `lonCell`, `zgrid`, `uReconstructZonal`, `uReconstructMeridional`, and `w`
@@ -131,6 +132,20 @@ python plume_forwtraj.py \
   --source-lon 40.71 \
   --emission-matrix emission_matrix.txt \
   --state-pickle forward_run.pkl
+
+# Forward mode with time-intensity emission timeseries
+python plume_forwtraj.py \
+  --target wrf \
+  --input wrfout_d01_2025-11* \
+  --start-time 2025-11-23T08:30:00 \
+  --end-time 2025-11-24T12:00:00 \
+  --source-lat 13.51 \
+  --source-lon 40.71 \
+  --z-min 100 \
+  --z-max 1500 \
+  --n-vert 15 \
+  --emission-timeseries emission_timeseries.txt \
+  --state-pickle forward_run.pkl
 ```
 
 Emission-matrix notes:
@@ -144,6 +159,13 @@ Emission-matrix notes:
   - matrix heights and counts are ignored
   - heights are rebuilt from `z-min..z-max` with `n-vert` levels
   - each (time,height) cell uses one parcel
+
+Emission-timeseries notes:
+- File format:
+  - first non-empty line: `time_offset_h parcels` or `time_offset_s parcels`
+  - remaining rows: one release time and one total parcel count
+- `--z-min`, `--z-max`, and `--n-vert` are required.
+- Counts are distributed as evenly as possible over uniformly spaced heights between `z-min` and `z-max`.
 
 ## Misc Utilities
 

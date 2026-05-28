@@ -2,6 +2,7 @@ import argparse
 import pickle
 from pathlib import Path
 import sys
+from contextlib import contextmanager
 import numpy as np
 
 # Add parent directory to path to import backend helpers
@@ -16,13 +17,14 @@ diagnostic is the same.
 Example usage:
 
 python misc/aggregate_forwtraj.py \
-  --pattern "./forward_run_*.pkl" \
-  --height-figure plume_height_colored_aggregate.png \
-  --age-figure plume_age_colored_aggregate.png \
-  --seeds-vertical-figure seeds_vertical_aggregate.png \
-  --deposition-figure deposited_by_hour_aggregate.png \
-  --hourly-output-dir ./hourly_maps_aggregate \
-  --map-extent 30 5 65 30
+    --pattern "p*run/forward_run.pkl" \
+    --height-figure aggregate/plume_initial_height_aggregate.png \
+    --age-figure aggregate/plume_age_aggregate.png \
+    --deposition-figure aggregate/deposited_by_hour_aggregate.png \
+    --seeds-vertical-figure aggregate/seeds_vertical_aggregate.png \
+    --hourly-output-dir aggregate/hourly \
+    --map-extent 30 5 65 30 \
+    --figure-dpi 300
 '''
 
 
@@ -40,6 +42,54 @@ from src.plume_mpas import (
     plot_mpas_trajectories_by_age,
     plot_mpas_vertical_distribution,
 )
+
+
+@contextmanager
+def _shift_standard_colorbar_slot_up(delta_y=0.03):
+    """
+    Aggregate-only styling hook.
+
+    Shift the common horizontal colorbar axes used by trajectory plotters from
+    [0.2, 0.05, 0.6, 0.03] to [0.2, 0.08, 0.6, 0.03] (or by custom delta_y).
+    """
+    import matplotlib.figure as mpl_figure
+
+    orig_add_axes = mpl_figure.Figure.add_axes
+
+    def patched_add_axes(self, *args, **kwargs):
+        rect = None
+        if args:
+            rect = args[0]
+        elif "rect" in kwargs:
+            rect = kwargs["rect"]
+
+        if rect is not None:
+            try:
+                x, y, w, h = [float(v) for v in rect]
+            except Exception:
+                x = y = w = h = None
+            if (
+                x is not None
+                and abs(x - 0.2) < 1e-9
+                and abs(y - 0.05) < 1e-9
+                and abs(w - 0.6) < 1e-9
+                and abs(h - 0.03) < 1e-9
+            ):
+                shifted = [x, y + float(delta_y), w, h]
+                if args:
+                    new_args = (shifted,) + args[1:]
+                    return orig_add_axes(self, *new_args, **kwargs)
+                new_kwargs = dict(kwargs)
+                new_kwargs["rect"] = shifted
+                return orig_add_axes(self, **new_kwargs)
+
+        return orig_add_axes(self, *args, **kwargs)
+
+    mpl_figure.Figure.add_axes = patched_add_axes
+    try:
+        yield
+    finally:
+        mpl_figure.Figure.add_axes = orig_add_axes
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -343,98 +393,99 @@ def main():
         if init_heights is not None:
             init_heights = np.asarray(init_heights)
 
-        if args.hourly_output_dir:
-            n_hourly = plot_mpas_hourly_snapshots(
-                lat_deg,
-                lon_deg,
-                traj_lon,
-                traj_lat,
-                traj_active,
-                traj_z,
-                traj_times,
-                trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
-                args.hourly_output_dir,
-                figure_dpi=fig_dpi,
-                map_extent=map_extent,
-                source_lat=script_args.get("source_lat"),
-                source_lon=script_args.get("source_lon"),
-                seed_bbox=seed_bbox,
-                tail_enabled=True,
-                tail_steps=6,
-            )
-            print(
-                "[diag] Hourly snapshots saved: "
-                f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-                "using 'parcel_positions_hour.XXXX.png' naming."
-            )
+        with _shift_standard_colorbar_slot_up(delta_y=0.03):
+            if args.hourly_output_dir:
+                n_hourly = plot_mpas_hourly_snapshots(
+                    lat_deg,
+                    lon_deg,
+                    traj_lon,
+                    traj_lat,
+                    traj_active,
+                    traj_z,
+                    traj_times,
+                    trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
+                    args.hourly_output_dir,
+                    figure_dpi=fig_dpi,
+                    map_extent=map_extent,
+                    source_lat=script_args.get("source_lat"),
+                    source_lon=script_args.get("source_lon"),
+                    seed_bbox=seed_bbox,
+                    tail_enabled=True,
+                    tail_steps=6,
+                )
+                print(
+                    "[diag] Hourly snapshots saved: "
+                    f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+                    "using 'parcel_positions_hour.XXXX.png' naming."
+                )
 
-        if args.deposition_figure is not None:
-            saved_dep = plot_mpas_deposited_parcels_by_hour(
-                lat_deg,
-                lon_deg,
-                traj_lon,
-                traj_lat,
-                traj_z,
-                traj_active,
-                traj_times,
-                args.deposition_figure,
-                figure_dpi=fig_dpi,
-                map_extent=map_extent,
-                source_lat=source_lat,
-                source_lon=source_lon,
-                seed_bbox=seed_bbox,
-            )
-            if saved_dep:
-                print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
+            if args.deposition_figure is not None:
+                saved_dep = plot_mpas_deposited_parcels_by_hour(
+                    lat_deg,
+                    lon_deg,
+                    traj_lon,
+                    traj_lat,
+                    traj_z,
+                    traj_active,
+                    traj_times,
+                    args.deposition_figure,
+                    figure_dpi=fig_dpi,
+                    map_extent=map_extent,
+                    source_lat=source_lat,
+                    source_lon=source_lon,
+                    seed_bbox=seed_bbox,
+                )
+                if saved_dep:
+                    print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
 
-        if args.height_figure:
-            plot_mpas_parcel_trajectories(
-                traj_lon,
-                traj_lat,
-                traj_active,
-                np.arange(traj_lon.shape[1]),
-                np.asarray(init_heights) / 1000.0 if init_heights is not None else np.zeros(traj_lon.shape[1]),
-                lat_deg,
-                lon_deg,
-                args.height_figure,
-                title="Aggregated trajectories colored by initial height",
-                colorbar_label="Initial height (km)",
-                figure_dpi=fig_dpi,
-                map_extent=map_extent,
-                cmap_name="rainbow",
-                source_lat=source_lat,
-                source_lon=source_lon,
-                seed_bbox=seed_bbox,
-            )
+            if args.height_figure:
+                plot_mpas_parcel_trajectories(
+                    traj_lon,
+                    traj_lat,
+                    traj_active,
+                    np.arange(traj_lon.shape[1]),
+                    np.asarray(init_heights) / 1000.0 if init_heights is not None else np.zeros(traj_lon.shape[1]),
+                    lat_deg,
+                    lon_deg,
+                    args.height_figure,
+                    title="Aggregated trajectories colored by initial height",
+                    colorbar_label="Initial height (km)",
+                    figure_dpi=fig_dpi,
+                    map_extent=map_extent,
+                    cmap_name="rainbow",
+                    source_lat=source_lat,
+                    source_lon=source_lon,
+                    seed_bbox=seed_bbox,
+                )
 
-        if args.age_figure:
-            plot_mpas_trajectories_by_age(
-                traj_lon,
-                traj_lat,
-                traj_active,
-                traj_z,
-                traj_times,
-                lat_deg,
-                lon_deg,
-                args.age_figure,
-                figure_dpi=fig_dpi,
-                map_extent=map_extent,
-                source_lat=source_lat,
-                source_lon=source_lon,
-                seed_bbox=seed_bbox,
-            )
+            if args.age_figure:
+                plot_mpas_trajectories_by_age(
+                    traj_lon,
+                    traj_lat,
+                    traj_active,
+                    traj_z,
+                    traj_times,
+                    lat_deg,
+                    lon_deg,
+                    args.age_figure,
+                    figure_dpi=fig_dpi,
+                    map_extent=map_extent,
+                    source_lat=source_lat,
+                    source_lon=source_lon,
+                    seed_bbox=seed_bbox,
+                )
 
-        if args.seeds_vertical_figure is not None:
-            initial_parcels = state.get("initial_parcels")
-            if initial_parcels is None:
-                raise ValueError("Pickle does not contain initial parcels.")
-            plot_mpas_vertical_distribution(
-                parcels=initial_parcels,
-                out_path=args.seeds_vertical_figure,
-                z_min=z_min,
-                z_max=z_max,
-                figure_dpi=fig_dpi,
-            )
+            if args.seeds_vertical_figure is not None:
+                initial_parcels = state.get("initial_parcels")
+                if initial_parcels is None:
+                    raise ValueError("Pickle does not contain initial parcels.")
+                plot_mpas_vertical_distribution(
+                    parcels=initial_parcels,
+                    out_path=args.seeds_vertical_figure,
+                    z_min=z_min,
+                    z_max=z_max,
+                    figure_dpi=fig_dpi,
+                )
         return
 
     xlat = np.asarray(grid["xlat"])
@@ -450,62 +501,63 @@ def main():
         traj_k_all = np.asarray(traj_k_all)
     height_hist_all = np.asarray(height_hist)
 
-    if args.hourly_output_dir:
-        traj_times_utc = None
-        start_time_utc = state.get("metadata", {}).get("start_time")
-        if start_time_utc is not None:
-            try:
-                t0 = np.datetime64(start_time_utc).astype("datetime64[s]")
-                traj_seconds = np.rint(np.asarray(trajectories["times"], dtype=float)).astype(
-                    np.int64
-                )
-                traj_times_utc = t0 + traj_seconds.astype("timedelta64[s]")
-            except Exception:
-                traj_times_utc = None
+    with _shift_standard_colorbar_slot_up(delta_y=0.03):
+        if args.hourly_output_dir:
+            traj_times_utc = None
+            start_time_utc = state.get("metadata", {}).get("start_time")
+            if start_time_utc is not None:
+                try:
+                    t0 = np.datetime64(start_time_utc).astype("datetime64[s]")
+                    traj_seconds = np.rint(np.asarray(trajectories["times"], dtype=float)).astype(
+                        np.int64
+                    )
+                    traj_times_utc = t0 + traj_seconds.astype("timedelta64[s]")
+                except Exception:
+                    traj_times_utc = None
 
-        n_hourly = plot_hourly_parcel_snapshots(
-            xlat=xlat,
-            xlon=xlon,
-            trajectory_i=traj_i_all,
-            trajectory_j=traj_j_all,
-            trajectory_active=traj_active_all,
-            trajectory_k=traj_k_all,
-            trajectory_times_sec=trajectories["times"],
-            out_dir=args.hourly_output_dir,
-            height_hist_m=height_hist_all,
-            figure_dpi=fig_dpi,
-            seed_bbox=seed_bbox,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            map_extent=map_extent,
-            trajectory_times_utc=traj_times_utc,
-            tail_enabled=True,
-            tail_steps=6,
-        )
-        print(
-            "[diag] Hourly snapshots saved: "
-            f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
-            "using 'parcel_positions_hour.XXXX.png' naming."
-        )
+            n_hourly = plot_hourly_parcel_snapshots(
+                xlat=xlat,
+                xlon=xlon,
+                trajectory_i=traj_i_all,
+                trajectory_j=traj_j_all,
+                trajectory_active=traj_active_all,
+                trajectory_k=traj_k_all,
+                trajectory_times_sec=trajectories["times"],
+                out_dir=args.hourly_output_dir,
+                height_hist_m=height_hist_all,
+                figure_dpi=fig_dpi,
+                seed_bbox=seed_bbox,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                map_extent=map_extent,
+                trajectory_times_utc=traj_times_utc,
+                tail_enabled=True,
+                tail_steps=6,
+            )
+            print(
+                "[diag] Hourly snapshots saved: "
+                f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
+                "using 'parcel_positions_hour.XXXX.png' naming."
+            )
 
-    if args.deposition_figure is not None:
-        saved_dep = plot_deposited_parcels_by_hour(
-            xlat=xlat,
-            xlon=xlon,
-            trajectory_i=traj_i_all,
-            trajectory_j=traj_j_all,
-            trajectory_active=traj_active_all,
-            trajectory_k=traj_k_all,
-            trajectory_times_sec=trajectories["times"],
-            out_path=args.deposition_figure,
-            figure_dpi=fig_dpi,
-            seed_bbox=seed_bbox,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            map_extent=map_extent,
-        )
-        if saved_dep:
-            print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
+        if args.deposition_figure is not None:
+            saved_dep = plot_deposited_parcels_by_hour(
+                xlat=xlat,
+                xlon=xlon,
+                trajectory_i=traj_i_all,
+                trajectory_j=traj_j_all,
+                trajectory_active=traj_active_all,
+                trajectory_k=traj_k_all,
+                trajectory_times_sec=trajectories["times"],
+                out_path=args.deposition_figure,
+                figure_dpi=fig_dpi,
+                seed_bbox=seed_bbox,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                map_extent=map_extent,
+            )
+            if saved_dep:
+                print(f"[diag] Deposition-hour figure saved to '{args.deposition_figure}'.")
 
     keep_non_dep = _non_deposited_parcel_mask(traj_k_all, traj_active_all)
     if keep_non_dep is None:
@@ -527,55 +579,56 @@ def main():
         height_plot = height_hist_all[:, keep_non_dep]
         k_plot = traj_k_all[:, keep_non_dep] if traj_k_all is not None else None
 
-    if i_plot.shape[1] == 0:
-        print("[diag] No non-deposited parcels remain; skipping aggregate age/height plots.")
-    else:
-        plot_trajectories_by_height(
-            xlat=xlat,
-            xlon=xlon,
-            trajectory_i=i_plot,
-            trajectory_j=j_plot,
-            trajectory_active=active_plot,
-            trajectory_k=k_plot,
-            height_hist_m=height_plot,
-            out_path=args.height_figure,
-            height_min=None,
-            height_max=None,
-            figure_dpi=fig_dpi,
-            seed_bbox=seed_bbox,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            map_extent=map_extent,
-        )
+    with _shift_standard_colorbar_slot_up(delta_y=0.03):
+        if i_plot.shape[1] == 0:
+            print("[diag] No non-deposited parcels remain; skipping aggregate age/height plots.")
+        else:
+            plot_trajectories_by_height(
+                xlat=xlat,
+                xlon=xlon,
+                trajectory_i=i_plot,
+                trajectory_j=j_plot,
+                trajectory_active=active_plot,
+                trajectory_k=k_plot,
+                height_hist_m=height_plot,
+                out_path=args.height_figure,
+                height_min=None,
+                height_max=None,
+                figure_dpi=fig_dpi,
+                seed_bbox=seed_bbox,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                map_extent=map_extent,
+            )
 
-        plot_trajectories_by_age(
-            xlat=xlat,
-            xlon=xlon,
-            trajectory_i=i_plot,
-            trajectory_j=j_plot,
-            trajectory_active=active_plot,
-            trajectory_k=k_plot,
-            trajectory_times_sec=trajectories["times"],
-            out_path=args.age_figure,
-            figure_dpi=fig_dpi,
-            seed_bbox=seed_bbox,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            map_extent=map_extent,
-        )
+            plot_trajectories_by_age(
+                xlat=xlat,
+                xlon=xlon,
+                trajectory_i=i_plot,
+                trajectory_j=j_plot,
+                trajectory_active=active_plot,
+                trajectory_k=k_plot,
+                trajectory_times_sec=trajectories["times"],
+                out_path=args.age_figure,
+                figure_dpi=fig_dpi,
+                seed_bbox=seed_bbox,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                map_extent=map_extent,
+            )
 
-    if args.seeds_vertical_figure is not None:
-        initial_parcels = state.get("initial_parcels")
-        if initial_parcels is None:
-            raise ValueError("Pickle does not contain initial parcels.")
-        plot_seed_vertical_distribution(
-            parcels=initial_parcels,
-            out_path=args.seeds_vertical_figure,
-            z_min=z_min,
-            z_max=z_max,
-            figure_dpi=fig_dpi,
-            x_coords=initial_parcels.get("i"),
-        )
+        if args.seeds_vertical_figure is not None:
+            initial_parcels = state.get("initial_parcels")
+            if initial_parcels is None:
+                raise ValueError("Pickle does not contain initial parcels.")
+            plot_seed_vertical_distribution(
+                parcels=initial_parcels,
+                out_path=args.seeds_vertical_figure,
+                z_min=z_min,
+                z_max=z_max,
+                figure_dpi=fig_dpi,
+                x_coords=initial_parcels.get("i"),
+            )
 
 
 if __name__ == "__main__":

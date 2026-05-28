@@ -1,5 +1,6 @@
 import argparse
 import pickle
+from contextlib import contextmanager
 import numpy as np
 
 from .plume_wrf import (
@@ -9,6 +10,70 @@ from .plume_wrf import (
     plot_hourly_parcel_snapshots,
     plot_seed_vertical_distribution,
 )
+
+
+@contextmanager
+def _replot_colorbar_shift_up(delta_y=0.03):
+    """
+    Replot-only hook to lift colorbars by a fixed figure-fraction offset.
+
+    - Standard horizontal cax slot: [0.2, 0.05, 0.6, 0.03] -> y + delta_y
+    - Vertical colorbars created via plt.colorbar(..., ax=...) are shifted by delta_y
+      unless an explicit cax is supplied.
+    """
+    import matplotlib.figure as mpl_figure
+    import matplotlib.pyplot as plt
+
+    orig_add_axes = mpl_figure.Figure.add_axes
+    orig_colorbar = plt.colorbar
+
+    def patched_add_axes(self, *args, **kwargs):
+        rect = None
+        if args:
+            rect = args[0]
+        elif "rect" in kwargs:
+            rect = kwargs["rect"]
+
+        if rect is not None:
+            try:
+                x, y, w, h = [float(v) for v in rect]
+            except Exception:
+                x = y = w = h = None
+            if (
+                x is not None
+                and abs(x - 0.2) < 1e-9
+                and abs(y - 0.05) < 1e-9
+                and abs(w - 0.6) < 1e-9
+                and abs(h - 0.03) < 1e-9
+            ):
+                shifted = [x, y + float(delta_y), w, h]
+                if args:
+                    new_args = (shifted,) + args[1:]
+                    return orig_add_axes(self, *new_args, **kwargs)
+                new_kwargs = dict(kwargs)
+                new_kwargs["rect"] = shifted
+                return orig_add_axes(self, **new_kwargs)
+
+        return orig_add_axes(self, *args, **kwargs)
+
+    def patched_colorbar(*args, **kwargs):
+        cb = orig_colorbar(*args, **kwargs)
+        # Do not shift again when explicit cax is used (handled by add_axes patch).
+        if kwargs.get("cax") is None and kwargs.get("ax") is not None:
+            try:
+                pos = cb.ax.get_position()
+                cb.ax.set_position([pos.x0, pos.y0 + float(delta_y), pos.width, pos.height])
+            except Exception:
+                pass
+        return cb
+
+    mpl_figure.Figure.add_axes = patched_add_axes
+    plt.colorbar = patched_colorbar
+    try:
+        yield
+    finally:
+        mpl_figure.Figure.add_axes = orig_add_axes
+        plt.colorbar = orig_colorbar
 
 
 def parse_args():
@@ -108,33 +173,42 @@ def main(args=None):
         start_time_utc = state.get("metadata", {}).get("start_time")
         if start_time_utc is not None:
             try:
-                t0 = np.datetime64(start_time_utc).astype("datetime64[s]")
                 traj_seconds = np.rint(np.asarray(trajectories["times"], dtype=float)).astype(
                     np.int64
                 )
-                traj_times_utc = t0 + traj_seconds.astype("timedelta64[s]")
+                if traj_seconds.size > 0:
+                    # Stored forward trajectory times are absolute offsets from the
+                    # original model time origin; metadata start_time corresponds to
+                    # the first stored snapshot. Reconstruct that origin first.
+                    first_offset = int(traj_seconds[0])
+                    t_start = np.datetime64(start_time_utc).astype("datetime64[s]")
+                    t_origin = t_start - np.timedelta64(first_offset, "s")
+                    traj_times_utc = t_origin + traj_seconds.astype("timedelta64[s]")
+                else:
+                    traj_times_utc = None
             except Exception:
                 traj_times_utc = None
 
-        n_hourly = plot_hourly_parcel_snapshots(
-            xlat=xlat,
-            xlon=xlon,
-            trajectory_i=trajectories["i"],
-            trajectory_j=trajectories["j"],
-            trajectory_active=trajectories["active"],
-            trajectory_k=trajectories.get("k"),
-            trajectory_times_sec=trajectories["times"],
-            out_dir=args.hourly_output_dir,
-            height_hist_m=height_hist,
-            figure_dpi=fig_dpi,
-            seed_bbox=seed_bbox,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            map_extent=map_extent,
-            trajectory_times_utc=traj_times_utc,
-            tail_enabled=True,
-            tail_steps=6,
-        )
+        with _replot_colorbar_shift_up(delta_y=0.03):
+            n_hourly = plot_hourly_parcel_snapshots(
+                xlat=xlat,
+                xlon=xlon,
+                trajectory_i=trajectories["i"],
+                trajectory_j=trajectories["j"],
+                trajectory_active=trajectories["active"],
+                trajectory_k=trajectories.get("k"),
+                trajectory_times_sec=trajectories["times"],
+                out_dir=args.hourly_output_dir,
+                height_hist_m=height_hist,
+                figure_dpi=fig_dpi,
+                seed_bbox=seed_bbox,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                map_extent=map_extent,
+                trajectory_times_utc=traj_times_utc,
+                tail_enabled=True,
+                tail_steps=6,
+            )
         print(
             "[diag] Hourly snapshots saved: "
             f"{n_hourly} file(s) in '{args.hourly_output_dir}' "
@@ -160,21 +234,22 @@ def main(args=None):
         map_extent=map_extent,
     )
 
-    plot_trajectories_by_age(
-        xlat=xlat,
-        xlon=xlon,
-        trajectory_i=trajectories["i"],
-        trajectory_j=trajectories["j"],
-        trajectory_active=trajectories["active"],
-        trajectory_k=trajectories.get("k"),
-        trajectory_times_sec=trajectories["times"],
-        out_path=args.age_figure,
-        figure_dpi=fig_dpi,
-        seed_bbox=seed_bbox,
-        source_lat=source_lat,
-        source_lon=source_lon,
-        map_extent=map_extent,
-    )
+    with _replot_colorbar_shift_up(delta_y=0.03):
+        plot_trajectories_by_age(
+            xlat=xlat,
+            xlon=xlon,
+            trajectory_i=trajectories["i"],
+            trajectory_j=trajectories["j"],
+            trajectory_active=trajectories["active"],
+            trajectory_k=trajectories.get("k"),
+            trajectory_times_sec=trajectories["times"],
+            out_path=args.age_figure,
+            figure_dpi=fig_dpi,
+            seed_bbox=seed_bbox,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            map_extent=map_extent,
+        )
 
     if args.deposition_figure is not None:
         plot_deposited_parcels_by_hour(
@@ -197,14 +272,15 @@ def main(args=None):
         initial_parcels = state.get("initial_parcels")
         if initial_parcels is None:
             raise ValueError("Pickle does not contain initial parcels.")
-        plot_seed_vertical_distribution(
-            parcels=initial_parcels,
-            out_path=args.seeds_vertical_figure,
-            z_min=z_min,
-            z_max=z_max,
-            figure_dpi=fig_dpi,
-            x_coords=initial_parcels.get("i"),
-        )
+        with _replot_colorbar_shift_up(delta_y=0.03):
+            plot_seed_vertical_distribution(
+                parcels=initial_parcels,
+                out_path=args.seeds_vertical_figure,
+                z_min=z_min,
+                z_max=z_max,
+                figure_dpi=fig_dpi,
+                x_coords=initial_parcels.get("i"),
+            )
 
 
 if __name__ == "__main__":

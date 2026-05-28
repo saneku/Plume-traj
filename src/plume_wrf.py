@@ -32,7 +32,9 @@ from .plotting_base import normalize_map_extent, plot_seed_bbox
 from .plume_base import (
     PlumeBackend,
     emission_matrix_to_schedule,
+    emission_timeseries_to_schedule,
     parse_emission_matrix_file,
+    parse_emission_timeseries_file,
 )
 
 
@@ -243,6 +245,7 @@ def _init_geo_axes(
     lat_pad,
     figsize=(10, 8),
     map_extent=None,
+    water_only_grid=True,
 ):
     """Initialize a Cartopy PlateCarree map with shared style formatting."""
     fig, ax = plt.subplots(
@@ -256,7 +259,7 @@ def _init_geo_axes(
             [lon_min - lon_pad, lon_max + lon_pad, lat_min - lat_pad, lat_max + lat_pad],
             crs=PLATE_CARREE,
         )
-    apply_map_style(ax, draw_labels=False, label_size=10)
+    apply_map_style(ax, draw_labels=False, label_size=10, water_only_grid=water_only_grid)
     return fig, ax
 
 
@@ -3964,13 +3967,20 @@ def compute_height_history(
     return height_hist
 
 
-def _plot_trajectory_map_base(xlat, xlon, map_extent=None):
+def _plot_trajectory_map_base(xlat, xlon, map_extent=None, water_only_grid=True):
     lon_min, lon_max = float(np.nanmin(xlon)), float(np.nanmax(xlon))
     lat_min, lat_max = float(np.nanmin(xlat)), float(np.nanmax(xlat))
     lon_pad = max((lon_max - lon_min) * 0.05, 0.1)
     lat_pad = max((lat_max - lat_min) * 0.05, 0.1)
     fig, ax = _init_geo_axes(
-        lon_min, lon_max, lat_min, lat_max, lon_pad, lat_pad, map_extent=map_extent
+        lon_min,
+        lon_max,
+        lat_min,
+        lat_max,
+        lon_pad,
+        lat_pad,
+        map_extent=map_extent,
+        water_only_grid=water_only_grid,
     )
     return fig, ax
 
@@ -4079,7 +4089,12 @@ def plot_trajectories_by_height(
     lat_hist, lon_hist = _trajectory_latlon_history(xlat, xlon, traj_i, traj_j)
     ground_mask, ground_stop_idx = _ground_stop_indices(trajectory_k, active_hist)
 
-    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+    fig, ax = _plot_trajectory_map_base(
+        xlat,
+        xlon,
+        map_extent=map_extent,
+        water_only_grid=False,
+    )
 
     n_bins = 10
     finite_init = np.isfinite(init_heights_m)
@@ -4223,7 +4238,12 @@ def plot_trajectories_by_age(
         return False
     age_hours = (traj_times - traj_times[0]) / 3600.0
 
-    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+    fig, ax = _plot_trajectory_map_base(
+        xlat,
+        xlon,
+        map_extent=map_extent,
+        water_only_grid=False,
+    )
 
     n_bins = 10
     age_min = float(np.nanmin(age_hours))
@@ -4308,8 +4328,8 @@ def plot_trajectories_by_age(
         boundaries=age_bins,
         ticks=age_centers,
     )
-    cb.set_ticklabels([f"{val:.1f} h" for val in age_centers])
-    cb.set_label("Parcel age (hours)")
+    cb.set_ticklabels([f"{val:.1f}" for val in age_centers])
+    cb.set_label("Parcel age")
     _bump_colorbar_fonts(cb)
 
     fig.savefig(out_path, dpi=figure_dpi)
@@ -4369,7 +4389,12 @@ def plot_deposited_parcels_by_hour(
     lat_dep = lat_dep[valid]
     dep_hours = dep_hours[valid]
 
-    fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+    fig, ax = _plot_trajectory_map_base(
+        xlat,
+        xlon,
+        map_extent=map_extent,
+        water_only_grid=False,
+    )
 
     n_bins = 10
     hmin = float(np.nanmin(dep_hours))
@@ -4590,7 +4615,12 @@ def plot_hourly_parcel_snapshots(
         # visible at their final position after advection stops for them.
         visible_mask = np.isfinite(lon_hist[snap_idx]) & np.isfinite(lat_hist[snap_idx])
 
-        fig, ax = _plot_trajectory_map_base(xlat, xlon, map_extent=map_extent)
+        fig, ax = _plot_trajectory_map_base(
+            xlat,
+            xlon,
+            map_extent=map_extent,
+            water_only_grid=False,
+        )
         if visible_mask.any():
             vis_idx = np.where(visible_mask)[0]
             lons = lon_hist[snap_idx, vis_idx]
@@ -4714,7 +4744,7 @@ def plot_hourly_parcel_snapshots(
                 )
 
         if heights_km is not None:
-            cax = fig.add_axes([0.2, 0.10, 0.6, 0.03])
+            cax = fig.add_axes([0.2, 0.05, 0.6, 0.03])
             sm = plt.cm.ScalarMappable(cmap=cmap_height, norm=norm_height)
             sm.set_array([])
             cb = plt.colorbar(
@@ -4820,6 +4850,16 @@ def parse_forwtraj_args():
             "Optional time-height emission matrix TXT. Recommended time header is "
             "'time_offset_h' or 'time_offset_s' (offsets from --start-time). "
             "Legacy 'time' header is also accepted."
+        ),
+    )
+    parser.add_argument(
+        "--emission-timeseries",
+        default=None,
+        help=(
+            "Optional time-intensity emission TXT. Format: header "
+            "'time_offset_h parcels', followed by rows of release time offset "
+            "and total parcel count. Heights are generated uniformly from "
+            "--z-min/--z-max/--n-vert."
         ),
     )
     parser.add_argument(
@@ -4958,60 +4998,101 @@ def run_forwtraj(args):
     z_max_cfg = 25000.0 if args.z_max is None else float(args.z_max)
     n_vert_cfg = 30 if args.n_vert is None else int(args.n_vert)
 
-    if np.isfinite(z_max_cfg) and z_max_cfg > model_max_height and args.emission_matrix is None:
+    if args.emission_matrix and args.emission_timeseries:
+        raise ValueError("Use only one of --emission-matrix or --emission-timeseries.")
+
+    has_emission_schedule = bool(args.emission_matrix or args.emission_timeseries)
+    if np.isfinite(z_max_cfg) and z_max_cfg > model_max_height and not has_emission_schedule:
         raise ValueError(
             f"Requested z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
         )
 
     parcels_init_for_seed_plot = None
     release_time_sec = None
-    if args.emission_matrix:
+    if args.emission_matrix or args.emission_timeseries:
         if args.source_lat is None or args.source_lon is None:
-            raise ValueError("Emission-matrix mode requires --source-lat and --source-lon.")
+            raise ValueError("Emission schedule mode requires --source-lat and --source-lon.")
 
-        matrix = parse_emission_matrix_file(args.emission_matrix)
-        _diag(f"Loaded emission matrix file: {args.emission_matrix}")
-        _diag(
-            f"Emission matrix time header '{matrix['time_key']}' interpreted as "
-            f"'{matrix['time_kind']}'."
-        )
-        _diag("Emission matrix file content:")
-        for ln in matrix["raw_text"].splitlines():
-            _diag(f"  {ln}")
-
-        use_override = (
-            args.z_min is not None
-            and args.z_max is not None
-            and args.n_vert is not None
-        )
-        if use_override and z_max_cfg > model_max_height:
-            raise ValueError(
-                f"Requested override z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
-            )
-        schedule = emission_matrix_to_schedule(
-            matrix,
-            start_time_dt.astype("datetime64[s]"),
-            z_override=(
-                dict(z_min=z_min_cfg, z_max=z_max_cfg, n_vert=n_vert_cfg)
-                if use_override
-                else None
-            ),
-        )
-        if use_override:
+        if args.emission_matrix:
+            matrix = parse_emission_matrix_file(args.emission_matrix)
+            _diag(f"Loaded emission matrix file: {args.emission_matrix}")
             _diag(
-                "Emission matrix override mode: using matrix times only with heights from "
-                f"--z-min/--z-max/--n-vert = {z_min_cfg:.1f}/{z_max_cfg:.1f}/{n_vert_cfg}, "
-                "and 1 particle per (time,height) cell."
+                f"Emission matrix time header '{matrix['time_key']}' interpreted as "
+                f"'{matrix['time_kind']}'."
             )
+            _diag("Emission matrix file content:")
+            for ln in matrix["raw_text"].splitlines():
+                _diag(f"  {ln}")
+
+            use_override = (
+                args.z_min is not None
+                and args.z_max is not None
+                and args.n_vert is not None
+            )
+            if use_override and z_max_cfg > model_max_height:
+                raise ValueError(
+                    f"Requested override z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
+                )
+            schedule = emission_matrix_to_schedule(
+                matrix,
+                start_time_dt.astype("datetime64[s]"),
+                z_override=(
+                    dict(z_min=z_min_cfg, z_max=z_max_cfg, n_vert=n_vert_cfg)
+                    if use_override
+                    else None
+                ),
+            )
+            if use_override:
+                _diag(
+                    "Emission matrix override mode: using matrix times only with heights from "
+                    f"--z-min/--z-max/--n-vert = {z_min_cfg:.1f}/{z_max_cfg:.1f}/{n_vert_cfg}, "
+                    "and 1 particle per (time,height) cell."
+                )
+            else:
+                _diag(
+                    "Emission matrix native mode: using matrix times, heights, and counts "
+                    f"(height units interpreted as {schedule['height_unit_hint']})."
+                )
         else:
+            if args.z_min is None or args.z_max is None or args.n_vert is None:
+                raise ValueError(
+                    "Emission-timeseries mode requires --z-min, --z-max, and --n-vert."
+                )
+            if z_max_cfg > model_max_height:
+                raise ValueError(
+                    f"Requested z_max={z_max_cfg:.1f} m exceeds model top {model_max_height:.1f} m."
+                )
+            timeseries = parse_emission_timeseries_file(args.emission_timeseries)
+            _diag(f"Loaded emission timeseries file: {args.emission_timeseries}")
             _diag(
-                "Emission matrix native mode: using matrix times, heights, and counts "
-                f"(height units interpreted as {schedule['height_unit_hint']})."
+                f"Emission timeseries time header '{timeseries['time_key']}' interpreted as "
+                f"'{timeseries['time_kind']}'."
+            )
+            _diag("Emission timeseries file content:")
+            for ln in timeseries["raw_text"].splitlines():
+                _diag(f"  {ln}")
+            schedule = emission_timeseries_to_schedule(
+                timeseries,
+                start_time_dt.astype("datetime64[s]"),
+                z_min=z_min_cfg,
+                z_max=z_max_cfg,
+                n_vert=n_vert_cfg,
+            )
+            _diag(
+                "Emission timeseries mode: using time-varying parcel counts with "
+                f"uniform heights from --z-min/--z-max/--n-vert = "
+                f"{z_min_cfg:.1f}/{z_max_cfg:.1f}/{n_vert_cfg}."
+            )
+
+        if np.nanmax(schedule["heights_m"]) > model_max_height:
+            raise ValueError(
+                f"Requested release height {np.nanmax(schedule['heights_m']):.1f} m "
+                f"exceeds model top {model_max_height:.1f} m."
             )
 
         release_times_utc_all, release_heights_m_all = _build_emission_release_vectors(schedule)
         if release_times_utc_all.size == 0:
-            raise ValueError("Emission matrix produced zero release parcels.")
+            raise ValueError("Emission schedule produced zero release parcels.")
 
         in_window = (
             release_times_utc_all >= times_arr[it_start].astype("datetime64[s]")
@@ -5019,7 +5100,7 @@ def run_forwtraj(args):
             release_times_utc_all <= times_arr[it_end].astype("datetime64[s]")
         )
         if not np.any(in_window):
-            raise ValueError("No emission-matrix releases fall inside the requested advection window.")
+            raise ValueError("No emission-schedule releases fall inside the requested advection window.")
 
         release_times_utc = release_times_utc_all[in_window].astype("datetime64[s]")
         release_heights_m = release_heights_m_all[in_window]

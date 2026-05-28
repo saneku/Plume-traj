@@ -314,7 +314,7 @@ def _add_inset(ax, extent):
     inset.spines["geo"].set_linewidth(0.8)
 
 
-def apply_map_style(ax, draw_labels=False, label_size=10):
+def apply_map_style(ax, draw_labels=False, label_size=10, water_only_grid=True):
     """Apply full shared map style from test.py: palette, grid, labels, inset, scale."""
     extent = _extent_from_ax(ax)
     lon_min, lat_min, lon_max, lat_max = extent
@@ -333,7 +333,8 @@ def apply_map_style(ax, draw_labels=False, label_size=10):
         zorder=0,
     )
 
-    _plot_water_only_grid(ax, extent, land_union, meridian_step=5, parallel_step=5, spacing=0.05)
+    if water_only_grid:
+        _plot_water_only_grid(ax, extent, land_union, meridian_step=5, parallel_step=5, spacing=0.05)
 
     ax.add_feature(
         cfeature.NaturalEarthFeature(

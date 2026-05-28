@@ -1,6 +1,7 @@
 """Replot MPAS forward trajectory state pickles."""
 
 import pickle
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -11,6 +12,69 @@ from .plume_mpas import (
     plot_mpas_trajectories_by_age,
     plot_mpas_vertical_distribution,
 )
+
+
+@contextmanager
+def _replot_colorbar_shift_up(delta_y=0.03):
+    """
+    Replot-only hook to lift colorbars by a fixed figure-fraction offset.
+
+    - Standard horizontal cax slot: [0.2, 0.05, 0.6, 0.03] -> y + delta_y
+    - Vertical colorbars created via plt.colorbar(..., ax=...) are shifted by delta_y
+      unless an explicit cax is supplied.
+    """
+    import matplotlib.figure as mpl_figure
+    import matplotlib.pyplot as plt
+
+    orig_add_axes = mpl_figure.Figure.add_axes
+    orig_colorbar = plt.colorbar
+
+    def patched_add_axes(self, *args, **kwargs):
+        rect = None
+        if args:
+            rect = args[0]
+        elif "rect" in kwargs:
+            rect = kwargs["rect"]
+
+        if rect is not None:
+            try:
+                x, y, w, h = [float(v) for v in rect]
+            except Exception:
+                x = y = w = h = None
+            if (
+                x is not None
+                and abs(x - 0.2) < 1e-9
+                and abs(y - 0.05) < 1e-9
+                and abs(w - 0.6) < 1e-9
+                and abs(h - 0.03) < 1e-9
+            ):
+                shifted = [x, y + float(delta_y), w, h]
+                if args:
+                    new_args = (shifted,) + args[1:]
+                    return orig_add_axes(self, *new_args, **kwargs)
+                new_kwargs = dict(kwargs)
+                new_kwargs["rect"] = shifted
+                return orig_add_axes(self, **new_kwargs)
+
+        return orig_add_axes(self, *args, **kwargs)
+
+    def patched_colorbar(*args, **kwargs):
+        cb = orig_colorbar(*args, **kwargs)
+        if kwargs.get("cax") is None and kwargs.get("ax") is not None:
+            try:
+                pos = cb.ax.get_position()
+                cb.ax.set_position([pos.x0, pos.y0 + float(delta_y), pos.width, pos.height])
+            except Exception:
+                pass
+        return cb
+
+    mpl_figure.Figure.add_axes = patched_add_axes
+    plt.colorbar = patched_colorbar
+    try:
+        yield
+    finally:
+        mpl_figure.Figure.add_axes = orig_add_axes
+        plt.colorbar = orig_colorbar
 
 
 def main(args):
@@ -38,24 +102,25 @@ def main(args):
     source_lon = script_args.get("source_lon")
 
     if args.hourly_output_dir:
-        plot_mpas_hourly_snapshots(
-            lat,
-            lon,
-            traj_lon,
-            traj_lat,
-            traj_active,
-            traj_z,
-            traj_times,
-            trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
-            args.hourly_output_dir,
-            figure_dpi=dpi,
-            map_extent=map_extent,
-            source_lat=source_lat,
-            source_lon=source_lon,
-            seed_bbox=seed_bbox,
-            tail_enabled=True,
-            tail_steps=6,
-        )
+        with _replot_colorbar_shift_up(delta_y=0.03):
+            plot_mpas_hourly_snapshots(
+                lat,
+                lon,
+                traj_lon,
+                traj_lat,
+                traj_active,
+                traj_z,
+                traj_times,
+                trajectories.get("time_indices", np.arange(traj_lon.shape[0])),
+                args.hourly_output_dir,
+                figure_dpi=dpi,
+                map_extent=map_extent,
+                source_lat=source_lat,
+                source_lon=source_lon,
+                seed_bbox=seed_bbox,
+                tail_enabled=True,
+                tail_steps=6,
+            )
 
     if args.deposition_figure is not None:
         plot_mpas_deposited_parcels_by_hour(
@@ -99,30 +164,32 @@ def main(args):
         seed_bbox=seed_bbox,
     )
 
-    plot_mpas_trajectories_by_age(
-        traj_lon,
-        traj_lat,
-        traj_active,
-        traj_z,
-        traj_times,
-        lat,
-        lon,
-        args.age_figure,
-        figure_dpi=dpi,
-        map_extent=map_extent,
-        source_lat=source_lat,
-        source_lon=source_lon,
-        seed_bbox=seed_bbox,
-    )
+    with _replot_colorbar_shift_up(delta_y=0.03):
+        plot_mpas_trajectories_by_age(
+            traj_lon,
+            traj_lat,
+            traj_active,
+            traj_z,
+            traj_times,
+            lat,
+            lon,
+            args.age_figure,
+            figure_dpi=dpi,
+            map_extent=map_extent,
+            source_lat=source_lat,
+            source_lon=source_lon,
+            seed_bbox=seed_bbox,
+        )
 
     if args.seeds_vertical_figure is not None:
         initial_parcels = state.get("initial_parcels")
         if initial_parcels is None:
             raise ValueError("Pickle does not contain initial parcels.")
-        plot_mpas_vertical_distribution(
-            initial_parcels,
-            args.seeds_vertical_figure,
-            script_args.get("z_min"),
-            script_args.get("z_max"),
-            dpi,
-        )
+        with _replot_colorbar_shift_up(delta_y=0.03):
+            plot_mpas_vertical_distribution(
+                initial_parcels,
+                args.seeds_vertical_figure,
+                script_args.get("z_min"),
+                script_args.get("z_max"),
+                dpi,
+            )
