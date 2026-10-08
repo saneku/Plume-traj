@@ -8,5 +8,6 @@ dependencies:
   - netcdf4
   - matplotlib
   - cartopy
+  - shapely
   - xarray
   - pip

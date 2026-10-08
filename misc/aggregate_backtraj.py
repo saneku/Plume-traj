@@ -30,7 +30,6 @@ from src.plume_wrf import (
     plot_emission_matrix,
     plot_hourly_parcel_snapshots,
     _format_time_str,
-    compute_height_edges,
 )
 from src.plume_mpas import (
     plot_emission_matrix as plot_mpas_emission_matrix,

@@ -5,7 +5,6 @@ import cartopy.feature as cfeature
 import os
 import glob
 import numpy as np
-import xarray as xr
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 from matplotlib.patches import Circle

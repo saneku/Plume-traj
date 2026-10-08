@@ -216,7 +216,9 @@ def read_mpas_history(input_args):
 def _interp_profile(z, profile, values):
     if profile.size < 2:
         return np.nan
-    return np.interp(z, profile, values, left=np.nan, right=np.nan)
+    # Below the lowest mid-level, hold the lowest-level value so near-surface
+    # parcels (and RK4 stages dipping below 0) reach the ground instead of being dropped as invalid.
+    return np.interp(z, profile, values, left=values[0], right=np.nan)
 
 
 def _find_time_bounds(times, time_value):
@@ -434,9 +436,12 @@ def advect_parcels_forward(
     lat[:] = np.nan
     z[:] = np.nan
 
+    needs_settle = np.zeros(n_parcels, dtype=bool)
+
     def _activate_new_parcels(current_time):
         new = (~released) & np.isfinite(release_sec) & (release_sec <= current_time + 1e-9)
         if np.any(new):
+            needs_settle[new] = True
             lon[new] = lon_seed[new]
             lat[new] = lat_seed[new]
             z[new] = z_seed[new]
@@ -477,20 +482,36 @@ def advect_parcels_forward(
             continue
         sub_time = current_sec
         dt_remaining = dt_total
-        while dt_remaining > 0 and active.any():
+        while dt_remaining > 0:
+            if not active.any():
+                # Nothing to advect: jump to the next pending release inside this interval.
+                pending = release_sec[(~released) & np.isfinite(release_sec)]
+                pending = pending[pending > sub_time + 1e-9]
+                if pending.size == 0:
+                    break
+                jump = min(float(pending.min()) - sub_time, dt_remaining)
+                sub_time += jump
+                dt_remaining -= jump
+                _activate_new_parcels(sub_time)
+                continue
+
             dt_step = min(integration_dt, dt_remaining)
             idxs = np.where(active)[0]
             if settling_enabled:
                 steps_until_settle_update -= 1
-                if steps_until_settle_update <= 0:
-                    settle_vals_now = np.interp(
-                        z[idxs],
+                refresh_all = steps_until_settle_update <= 0
+                # Newly released parcels get their settling velocity immediately.
+                refresh = np.ones(idxs.size, dtype=bool) if refresh_all else needs_settle[idxs]
+                if refresh.any():
+                    parcel_settle[idxs[refresh]] = np.interp(
+                        z[idxs[refresh]],
                         settling_heights,
                         settling_velocity,
                         left=settling_velocity[0],
                         right=settling_velocity[-1],
                     )
-                    parcel_settle[idxs] = settle_vals_now
+                    needs_settle[idxs[refresh]] = False
+                if refresh_all:
                     steps_until_settle_update = settle_steps
                 settle_vals_current = parcel_settle[idxs]
             else:
@@ -692,6 +713,9 @@ def advect_parcels_backward(
         dt_remaining = dt_total
         while dt_remaining > 0 and active.any():
             dt_step = min(integration_dt, dt_remaining)
+            if emission_start_time is not None and sub_time > 0.0:
+                # Land exactly on the emission start instead of overshooting it.
+                dt_step = min(dt_step, sub_time)
             idxs = np.where(active)[0]
             if settling_enabled:
                 steps_until_settle_update -= 1
@@ -838,7 +862,10 @@ def advect_parcels_backward(
         z_hist.append(z.copy())
         active_hist.append(active.copy())
         time_indices.append(it - 1)
-        time_hist.append(times[it - 1])
+        if reached_start and times.dtype.kind == "M":
+            time_hist.append(t_ref + np.timedelta64(int(round(current_sec)), "s"))
+        else:
+            time_hist.append(times[it - 1])
         if reached_start:
             break
 
@@ -859,7 +886,7 @@ def advect_parcels_backward(
         advection_start_index=int(start_time_index),
         advection_finish_index=finish_index,
         advection_start_time=times[start_time_index],
-        advection_finish_time=times[finish_index],
+        advection_finish_time=time_hist[-1],
     )
 
 

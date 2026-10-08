@@ -37,6 +37,8 @@ from .plume_base import (
     parse_emission_timeseries_file,
 )
 
+EARTH_RADIUS_M = 6371229.0  # same sphere radius as the MPAS backend
+
 
 
 def _format_time_str(val):
@@ -644,11 +646,13 @@ def advect_parcels_backward_wrf(
         (j_coords, i_coords), dy_m, bounds_error=False, fill_value=None
     )
 
-    # Find closest grid cell to receptor coordinates
-    dist2 = (xlat - receptor_lat) ** 2 + (xlon - receptor_lon) ** 2
-    j_rec, i_rec = np.unravel_index(np.argmin(dist2), dist2.shape)
-    rec_dx = dx_m[j_rec, i_rec]
-    rec_dy = dy_m[j_rec, i_rec]
+    interp_lat = RegularGridInterpolator(
+        (j_coords, i_coords), xlat, bounds_error=False, fill_value=None
+    )
+    interp_lon = RegularGridInterpolator(
+        (j_coords, i_coords), xlon, bounds_error=False, fill_value=None
+    )
+    cos_rec_lat = np.cos(np.deg2rad(receptor_lat))
     radius_eff = max(receptor_radius_m + parcel_radius_m, 0.0)
     radius_sq = radius_eff ** 2
 
@@ -735,6 +739,9 @@ def advect_parcels_backward_wrf(
 
         while dt_remaining > 0 and active.any():
             dt_step = min(integration_dt, dt_remaining)
+            if emission_start_time is not None and sub_time > 0.0:
+                # Land exactly on the emission start instead of overshooting it.
+                dt_step = min(dt_step, sub_time)
             dt_values.append(dt_step)
 
             idxs = np.where(active)[0]
@@ -908,9 +915,11 @@ def advect_parcels_backward_wrf(
                 + frac_lo_after * interp_z_lo(pts_3d_after)
             )
 
-            di_h = i_p[idxs_after] - float(i_rec)
-            dj_h = j_p[idxs_after] - float(j_rec)
-            dist_sq = (di_h * rec_dx) ** 2 + (dj_h * rec_dy) ** 2
+            # Distance to the exact receptor lat/lon (not the snapped grid cell), as in MPAS.
+            pts_2d_after = np.column_stack((j_p[idxs_after], i_p[idxs_after]))
+            dlat_r = np.deg2rad(interp_lat(pts_2d_after) - receptor_lat)
+            dlon_r = np.deg2rad(interp_lon(pts_2d_after) - receptor_lon) * cos_rec_lat
+            dist_sq = (EARTH_RADIUS_M * dlat_r) ** 2 + (EARTH_RADIUS_M * dlon_r) ** 2
 
             in_cyl_h = dist_sq <= radius_sq
             in_cyl_z = (z_p >= receptor_min_h) & (z_p <= receptor_max_h)
@@ -2919,10 +2928,6 @@ def run_backtraj(args):
         start_time_sec = float(times_arr[it_start])
 
     print(f"Total parcels reaching receptor: {result['j'].size}")
-    if args.arrival_bin_minutes <= 0:
-        print("arrival_bin_minutes <= 0, skipping time–height series.")
-        return
-
     # --- Mass correction using e-folding lifetime ---
     if args.efolding_days is not None and args.efolding_days > 0:
         print("[diag] Applying mass correction using e-folding lifetime...")
@@ -2933,7 +2938,7 @@ def run_backtraj(args):
         # Calculate age and correction factor for each parcel individually
         corrected_masses = []
         for i in range(len(arrival_time_sec)):
-            parcel_age_sec = start_time_sec - arrival_time_sec[i]
+            parcel_age_sec = max(start_time_sec - arrival_time_sec[i], 0.0)
             # mass_emission = mass_receptor * exp(age / tau)
             mass_correction_factor = np.exp(parcel_age_sec / efolding_time_sec)
             corrected_mass = arrival_mass[i] * mass_correction_factor
@@ -2944,6 +2949,10 @@ def run_backtraj(args):
 
         print(f"[diag] Applied mass correction with e-folding time of {efolding_time_days} days.")
         print(f"[diag] Total mass changed from {original_mass_sum:.3e} to {corrected_mass_sum:.3e}.")
+
+    if args.arrival_bin_minutes <= 0:
+        print("arrival_bin_minutes <= 0, skipping time–height series.")
+        return
 
     # Vertical discretisation: use WRF vertical layers over receptor cell at start time
     z_profile_receptor = z_center[it_start, :, j_rec, i_rec]
@@ -3578,9 +3587,12 @@ def advect_parcels_forward_wrf(
     i_p[:] = np.nan
     k_p[:] = np.nan
 
+    needs_settle = np.zeros(n_parcels, dtype=bool)
+
     def _activate_new_parcels(current_time):
         new = (~released) & np.isfinite(release_sec) & (release_sec <= current_time + 1e-9)
         if np.any(new):
+            needs_settle[new] = True
             j_p[new] = j_seed[new]
             i_p[new] = i_seed[new]
             k_p[new] = k_seed[new]
@@ -3696,7 +3708,20 @@ def advect_parcels_forward_wrf(
         sub_time = t_sec[it]
         dt_remaining = dt_total
 
-        while dt_remaining > 0 and active.any():
+        while dt_remaining > 0:
+            if not active.any():
+                # Nothing to advect: jump to the next pending release inside this interval.
+                pending = release_sec[(~released) & np.isfinite(release_sec)]
+                pending = pending[pending > sub_time + 1e-9]
+                if pending.size == 0:
+                    break
+                jump = min(float(pending.min()) - sub_time, dt_remaining)
+                sub_time += jump
+                dt_remaining -= jump
+                current_time_sec = sub_time
+                _activate_new_parcels(sub_time)
+                continue
+
             dt_step = min(integration_dt, dt_remaining)
             dt_values.append(dt_step)
 
@@ -3709,21 +3734,26 @@ def advect_parcels_forward_wrf(
 
             if settling_enabled:
                 steps_until_settle_update -= 1
-                if steps_until_settle_update <= 0:
+                refresh_all = steps_until_settle_update <= 0
+                # Newly released parcels get their settling velocity immediately.
+                refresh = np.ones(idxs.size, dtype=bool) if refresh_all else needs_settle[idxs]
+                if refresh.any():
                     frac_hi_settle = np.clip((sub_time - t_sec[it]) / dt_total, 0.0, 1.0)
                     frac_lo_settle = 1.0 - frac_hi_settle
+                    pos_r = pos1[refresh]
                     heights_now = (
-                        frac_hi_settle * interp_z_hi(pos1)
-                        + frac_lo_settle * interp_z_lo(pos1)
+                        frac_hi_settle * interp_z_hi(pos_r)
+                        + frac_lo_settle * interp_z_lo(pos_r)
                     )
-                    settle_vals_now = np.interp(
+                    parcel_settle[idxs[refresh]] = np.interp(
                         heights_now,
                         settling_heights,
                         settling_velocity,
                         left=settling_velocity[0],
                         right=settling_velocity[-1],
                     )
-                    parcel_settle[idxs] = settle_vals_now
+                    needs_settle[idxs[refresh]] = False
+                if refresh_all:
                     steps_until_settle_update = settle_steps
                 settle_vals_current = parcel_settle[idxs]
             else:
@@ -3888,8 +3918,11 @@ def advect_parcels_forward_wrf(
 
 def compute_last_active_indices(trajectory_active):
     active_hist = np.asarray(trajectory_active, dtype=bool)
-    last_active_time_idx = active_hist.T.sum(axis=1) - 1
-    return np.clip(last_active_time_idx, 0, active_hist.shape[0] - 1)
+    n_snap = active_hist.shape[0]
+    # Last frame where each parcel is active (parcels may be released after frame 0).
+    last_from_end = np.argmax(active_hist[::-1], axis=0)
+    last_active_time_idx = np.where(active_hist.any(axis=0), n_snap - 1 - last_from_end, 0)
+    return np.clip(last_active_time_idx, 0, n_snap - 1)
 
 
 def compute_final_heights(
@@ -4929,18 +4962,6 @@ def parse_forwtraj_args():
     )
     _annotate_optionality(parser)
     return parser.parse_args()
-
-
-def _annotate_optionality(parser):
-    """Prefix each CLI option help with Required./Optional. for clarity."""
-    for action in parser._actions:
-        if action.dest == "help" or not action.option_strings:
-            continue
-        help_text = action.help or ""
-        if help_text.startswith(("Required.", "Optional.", "Conditionally required.")):
-            continue
-        prefix = "Required." if getattr(action, "required", False) else "Optional."
-        action.help = f"{prefix} {help_text}".strip()
 
 
 def run_forwtraj(args):

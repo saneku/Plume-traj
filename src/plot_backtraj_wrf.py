@@ -12,7 +12,6 @@ from .plume_wrf import (
     plot_seed_vertical_distribution,
     plot_hourly_parcel_snapshots,
     _format_time_str, # Import the helper function
-    compute_height_edges,
 )
 
 def parse_args():
